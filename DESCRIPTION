@@ -1,0 +1,24 @@
+Package: viyar
+Title: SAS Viya Compute and CAS Integration for R via REST
+Version: 0.1.0
+Authors@R: person("Samiul", "Haque", role = c("aut", "cre"),
+                  email = "samiul.haque@posit.co")
+Description: Connect R to SAS Viya using only REST APIs. Provides compute
+    session management, SAS code submission, libref and dataset discovery,
+    bidirectional data transfer, Viya Files/Folders access, and caslib
+    table loading with promotion. Complements 'swat' (CAS-only) and offers
+    a pure-R alternative to Python-based 'saspy'/'sasr' with no Python
+    dependency.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
+Imports:
+    httr2 (>= 1.0.0),
+    curl,
+    utils,
+    stats
+Suggests:
+    rstudioapi,
+    connectapi
+Config/roxygen2/version: 8.1.0
