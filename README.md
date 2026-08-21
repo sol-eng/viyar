@@ -1,6 +1,6 @@
 <img src="man/figures/logo.png" align="right" height="139" alt="viyar hex logo" />
 
-**SAS Viya integration with R **
+**Work with SAS Viya from R**
 
 ViyaR addresses the missing piece in the R – SASViya integration:
 
@@ -33,7 +33,7 @@ viya_upload(h, "report.html", "/Public")
 viya_end(h)
 ```
 
-## Auth
+## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name
   configurable, default `^sas-viya$`).
