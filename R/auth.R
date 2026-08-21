@@ -25,8 +25,8 @@ viya_config <- function(...) {
   for (nm in names(new)) options(structure(list(new[[nm]]),
                                            names = paste0("viyar.", nm)))
   cfg <- list(
-    url = getOption("viyar.url",
-                    Sys.getenv("VIYA_URL", unset = "")),
+    url = sub("/+$", "",
+          getOption("viyar.url", Sys.getenv("VIYA_URL", unset = ""))),
     context = getOption("viyar.context",
                         Sys.getenv("VIYA_CONTEXT",
                                    unset = "SAS Studio compute context")),

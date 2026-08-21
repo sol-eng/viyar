@@ -1,4 +1,4 @@
-# viyar
+<img src="man/figures/logo.png" align="right" height="139" alt="viyar hex logo" />
 
 **SAS Viya Compute + CAS integration for R — pure REST, no Python.**
 
