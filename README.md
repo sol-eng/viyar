@@ -1,15 +1,15 @@
 <img src="man/figures/logo.png" align="right" height="139" alt="viyar hex logo" />
 
-**SAS Viya Compute + CAS integration for R — pure REST, no Python.**
+**SAS Viya integration with R **
 
-The missing piece in the R–SAS ecosystem:
+ViyaR addresses the missing piece in the R – SASViya integration:
 
 |            | CAS | Compute (SAS code, PROCs) | Runtime deps |
 |------------|-----|---------------------------|--------------|
 | swat (R)   | yes | no                        | R             |
-| saspy      | via SAS | yes                   | Python        |
-| sasr       | via SAS | yes                   | Python + reticulate |
-| **viyar**  | management + load/promote | **yes** | **R only (httr2)** |
+| saspy      | via Compute Session | yes                   | Python        |
+| sasr       | via saspy | yes                   | Python + reticulate |
+| **viyar**  | via Compute Session | **yes** | **R** |
 
 ## Quick start
 
@@ -41,10 +41,14 @@ viya_end(h)
   `viya_session(token = viewer_token)`.
 - Anywhere: set `VIYA_TOKEN`.
 
-## Install (development)
+## Installation
+viyar is an internal package hosted at
+[sol-eng/viyar](https://github.com/sol-eng/viyar). Installation uses SSH
+(personal access tokens are disabled for this organization), so you need
+an SSH key registered with GitHub and authorized for the sol-eng org.
 
 ```r
 # from a source checkout:
-pkgload::load_all("viyar")     # or
-devtools::install_local("viyar")
+remotes::install_git("git@github.com:sol-eng/viyar.git")
+
 ```
