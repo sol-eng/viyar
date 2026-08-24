@@ -33,6 +33,27 @@ viya_upload(h, "report.html", "/Public")
 viya_end(h)
 ```
 
+## Folders and files
+
+Two separate storage systems, two separate function families:
+
+- **SAS Content** (the Files/Folders app in Viya): `viya_create_folder()`,
+  `viya_upload()`, `viya_download()`.
+- **The compute session's own filesystem** (a home directory, an
+  NFS-mounted shared path, or anything else the session process can see
+  on disk): `viya_fs_mkdir()`, `viya_fs_upload()`, `viya_fs_download()`,
+  `viya_fs_list()`. These need an active compute session (`h`) and
+  operate on that session's real filesystem, not the Files/Folders app.
+
+```r
+viya_create_folder(h, "/Public/Reports/2026")
+viya_upload(h, "report.html", "/Public/Reports/2026")
+
+viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
+viya_fs_upload(h, "report.html", "/gel/homes/samiul/reports/2026/report.html")
+viya_fs_list(h, "/gel/homes/samiul/reports/2026")
+```
+
 ## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name

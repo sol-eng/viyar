@@ -37,7 +37,18 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
 - `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
   dataset, via the Compute data service and a CSV-staging `PROC IMPORT`).
-- `R/files.R` — `viya_upload()`/`viya_download()` (Viya Files/Folders).
+- `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`
+  (SAS Content: the Files/Folders service).
+- `R/fs.R` — `viya_fs_mkdir()`/`viya_fs_upload()`/`viya_fs_download()`/
+  `viya_fs_list()`: a second, distinct storage system -- the real OS
+  filesystem a compute session sees (home directory, NFS-mounted shared
+  paths, etc.), via the Compute service's own "File System" REST
+  resource. Every path segment embedded in a URL for these calls has each
+  `/` replaced with the literal `~fs~` (SAS's own escaping convention,
+  confirmed empirically, not documented in prose form anywhere). Neither
+  this API nor the Folders API supports recursive/nested creation --
+  `viya_create_folder()`/`viya_fs_mkdir()` both walk the path themselves,
+  creating one missing segment at a time.
 
 ## The `viyar` S3 handle
 
