@@ -70,17 +70,23 @@ Resolution order in `viya_token()`:
 1. `VIYA_TOKEN` env var.
 2. A still-fresh cached token (from either of the paths below).
 3. Posit Workbench managed OAuth via `rstudioapi`, when
-   `rstudioapi::isAvailable()` is `TRUE` and a matching integration
-   exists (name regex: `viya_config()$wb_integration`, default
-   `^sas-viya$`). **`isAvailable()` requires a live IDE-connected R
-   process** — found live: `quarto render` (and plain `Rscript`) launch a
-   separate, detached R process to knit a document, so this auto-detection
-   silently doesn't run there even though the exact same code works when
-   run as an interactive cell or in the R console. `.viya_no_url_error()`
-   (in `R/auth.R`) detects this case (`rstudioapi` installed but not
-   connected) and appends a hint to the "No Viya URL configured" error
-   telling the user to set `VIYA_URL`/`viya_config(url = ...)` explicitly
-   before rendering non-interactively.
+   `rstudioapi::isAvailable(child_ok = TRUE)` is `TRUE` and a matching
+   integration exists (name regex: `viya_config()$wb_integration`, default
+   `^sas-viya$`). **Always pass `child_ok = TRUE`** — found live:
+   `rstudioapi::isAvailable()` defaults to reporting `FALSE` whenever the
+   current R process is a *child* of the main IDE session (an RStudio/
+   Positron background Job, a notebook's own execution kernel, or the
+   process `quarto render` knits the document in) — this is intentional
+   upstream behavior (see `?rstudioapi::isAvailable`), not a bug. Passing
+   `child_ok = TRUE` asks rstudioapi to relay the availability check back
+   to the parent session instead, which resolves it correctly for a real
+   RStudio/Positron Job with a live RPC channel to the parent (e.g.
+   rendering from inside the IDE). It does NOT help for a fully detached
+   process with no parent connection at all (e.g. `quarto render` run
+   from a plain terminal outside any IDE) — that case still needs
+   `VIYA_URL`/`viya_config(url = ...)` set explicitly.
+   `.viya_no_url_error()` (in `R/auth.R`) detects the still-unavailable
+   case and appends that hint to the "No Viya URL configured" error.
 4. A cached SSO token from `viya_login()`, refreshed via its
    `refresh_token` if expired.
 5. Otherwise: an error pointing at `viya_login()`/`VIYA_TOKEN`.
