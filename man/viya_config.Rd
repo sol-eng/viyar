@@ -16,11 +16,12 @@ The current configuration as a named list (invisibly when
 }
 \description{
 Configuration is resolved from R options first, then environment
-variables: `url` (option `viyar.url` / env `VIYA_URL`), `context`
-(option `viyar.context` / env `VIYA_CONTEXT`, default
-`"SAS Studio compute context"`), `cas_server` (option
-`viyar.cas_server` / env `VIYA_CAS_SERVER`, default
-`"cas-shared-default"`), and `wb_integration` (option
+variables: `url` (option `viyar.url` / env `VIYA_URL`; if still unset
+and running inside Posit Workbench, auto-detected from the matching
+OAuth integration's issuer URL), `context` (option `viyar.context` /
+env `VIYA_CONTEXT`, default `"SAS Studio compute context"`),
+`cas_server` (option `viyar.cas_server` / env `VIYA_CAS_SERVER`,
+default `"cas-shared-default"`), and `wb_integration` (option
 `viyar.wb_integration` / env `VIYA_WB_INTEGRATION`, a regex matching the
 Posit Workbench managed-credential integration name, default
 `"^sas-viya$"`).

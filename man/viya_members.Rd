@@ -12,8 +12,11 @@ viya_members(h, libref)
 \item{libref}{Library reference.}
 }
 \value{
-A data frame with member name, type (`DATA`/`VIEW`) and row
-  count.
+A data frame with columns `memname`, `memtype` (`DATA`/`VIEW`),
+  and `nobs` (row count) — lowercase, matching the exact case of the
+  `PROC SQL` `SELECT` list that creates the underlying table (SAS
+  preserves the case a variable is defined with; it does not
+  uppercase it).
 }
 \description{
 Member detail for a libref via dictionary.tables

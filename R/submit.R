@@ -74,17 +74,21 @@ viya_datasets <- function(h, libref) {
     httr2::req_perform() |> httr2::resp_body_json()
   nms <- vapply(r$items, `[[`, "", "name")
   if (length(nms)) return(nms)
-  viya_members(h, libref)$MEMNAME
+  viya_members(h, libref)$memname
 }
 
 #' Member detail for a libref via dictionary.tables
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param libref Library reference.
-#' @return A data frame with member name, type (`DATA`/`VIEW`) and row
-#'   count.
+#' @return A data frame with columns `memname`, `memtype` (`DATA`/`VIEW`),
+#'   and `nobs` (row count) — lowercase, matching the exact case of the
+#'   `PROC SQL` `SELECT` list that creates the underlying table (SAS
+#'   preserves the case a variable is defined with; it does not
+#'   uppercase it).
 #' @export
 viya_members <- function(h, libref) {
+  stopifnot(inherits(h, "viyar"), nzchar(libref))
   code <- sprintf(paste0(
     "proc sql;\n  create table WORK._VIYAR_MEMBERS as\n",
     "  select memname, memtype, nobs from dictionary.tables\n",
@@ -92,5 +96,8 @@ viya_members <- function(h, libref) {
   jr <- viya_submit(h, code)
   if (!identical(jr$state, "completed"))
     warning("dictionary query state: ", jr$state)
-  viya_read(h, "WORK", "_VIYAR_MEMBERS")
+  mem <- suppressMessages(viya_read(h, "WORK", "_VIYAR_MEMBERS"))
+  message("read ", nrow(mem), " member", if (nrow(mem) != 1) "s" else "",
+          " of ", toupper(libref))
+  mem
 }

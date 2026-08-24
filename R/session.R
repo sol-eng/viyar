@@ -9,6 +9,7 @@
 #' }
 #' @export
 viya_contexts <- function(token = viya_token(), url = viya_config()$url) {
+  stopifnot(nzchar(token), nzchar(url))
   h <- list(token = token, base = url)
   ctx <- .viya_req(h, "/compute/contexts?limit=100") |>
     httr2::req_perform() |> httr2::resp_body_json()
@@ -47,7 +48,10 @@ viya_session <- function(context = viya_config()$context,
   h <- list(token = token, base = url)
   for (i in seq_len(tries)) {
     if (!viya_reachable(url)) {
-      message("viya unreachable, waiting ", wait, "s (", i, "/", tries, ")")
+      hint <- if (grepl("^https://", url))
+        " (if this is a self-signed cluster, try viya_reachable(url, insecure = TRUE) to check)"
+      else ""
+      message("viya unreachable, waiting ", wait, "s (", i, "/", tries, ")", hint)
       Sys.sleep(wait); next
     }
     res <- tryCatch(
@@ -111,6 +115,7 @@ viya_end <- function(h) {
 #' @return A data frame with columns `id` and `state`.
 #' @export
 viya_sessions <- function(token = viya_token(), url = viya_config()$url) {
+  stopifnot(nzchar(token), nzchar(url))
   h <- list(token = token, base = url)
   r <- .viya_req(h, "/compute/sessions?limit=100") |>
     httr2::req_perform() |> httr2::resp_body_json()
@@ -127,6 +132,7 @@ viya_sessions <- function(token = viya_token(), url = viya_config()$url) {
 #' @export
 viya_kill <- function(session_id, token = viya_token(),
                       url = viya_config()$url) {
+  stopifnot(nzchar(session_id), nzchar(token), nzchar(url))
   h <- list(token = token, base = url)
   invisible(.viya_req(h, paste0("/compute/sessions/", session_id)) |>
               httr2::req_method("DELETE") |> httr2::req_perform())

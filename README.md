@@ -13,9 +13,23 @@ ViyaR addresses the missing piece in the R – SASViya integration:
 
 ## Quick start
 
+### Inside Posit Workbench
+
+If Workbench has a Viya OAuth integration configured, `viyar` auto-detects
+both the token and the Viya server URL — getting a session is one line,
+no `viya_config()` or login step needed:
+
+```r
+library(viyar)
+h <- viya_session()
+viya_librefs(h)
+```
+
+### Anywhere else (local desktop R, Posit Connect, CI)
+
 ```r
 viya_config(url = "https://your-viya-server.example.com")
-# token: VIYA_TOKEN env var, or Posit Workbench managed credentials (auto)
+# token: VIYA_TOKEN env var, or viya_login() for an interactive SSO login
 
 h <- viya_session()                    # compute session (retry/reachability aware)
 viya_librefs(h)
@@ -33,10 +47,39 @@ viya_upload(h, "report.html", "/Public")
 viya_end(h)
 ```
 
+## Folders and files
+
+Two separate storage systems, two separate function families:
+
+- **SAS Content** (the Files/Folders app in Viya): `viya_create_folder()`,
+  `viya_upload()`, `viya_download()`.
+- **The compute session's own filesystem** (a home directory, an
+  NFS-mounted shared path, or anything else the session process can see
+  on disk): `viya_fs_mkdir()`, `viya_fs_upload()`, `viya_fs_download()`,
+  `viya_fs_list()`. These need an active compute session (`h`) and
+  operate on that session's real filesystem, not the Files/Folders app.
+  Note that a path can be readable without being writable (e.g. an
+  NFS-mounted home directory with restrictive permissions) — `/tmp` is a
+  reliable writable scratch location if you hit unexpected 404s on
+  `viya_fs_mkdir()`/`viya_fs_upload()`.
+
+```r
+viya_create_folder(h, "/Public/Reports/2026")
+viya_upload(h, "report.html", "/Public/Reports/2026")
+
+viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
+viya_fs_upload(h, "report.html", "/gel/homes/samiul/reports/2026/report.html")
+viya_fs_list(h, "/gel/homes/samiul/reports/2026")
+```
+
 ## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name
-  configurable, default `^sas-viya$`).
+  configurable, default `^sas-viya$`). The Viya URL is auto-detected from
+  the integration if `viya_config(url = ...)`/`VIYA_URL` isn't set.
+- Local desktop R (outside Workbench): `viya_login()` opens a browser SSO
+  login (authorization code + PKCE) and caches the resulting token,
+  refreshing it automatically as it nears expiry.
 - Posit Connect: obtain a viewer token with connectapi and pass it:
   `viya_session(token = viewer_token)`.
 - Anywhere: set `VIYA_TOKEN`.
