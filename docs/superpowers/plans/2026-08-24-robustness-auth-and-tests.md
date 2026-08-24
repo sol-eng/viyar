@@ -1381,6 +1381,18 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   an invalid-client error on a different deployment, this is why.
 - `viya_write()`/`viya_load_table()` warn (not error) on a non-"completed"
   job state — callers checking `r$state` themselves is still on them.
+- `viya.pcluster.soleng.posit.it`'s CAS server was found stuck in
+  `"starting"` (a DNS lookup failure for its backend pod, confirmed via
+  `GET /casManagement/servers/{server}/state`) during Task 12's live
+  validation — a cluster infrastructure issue, not a viyar defect.
+  `test-live-cas.R` was instead validated against
+  `caf.pcluster.soleng.posit.it`, whose CAS server was healthy. If
+  `test-live-cas.R` 404s while the other live tests pass, check that
+  cluster's CAS state before assuming a regression.
+- `viya_upload()`'s Files API has no overwrite-on-upload — a fixed
+  filename collides with HTTP 409 on a second run against the same
+  cluster (found live). `test-live-data.R`'s upload test uses a
+  timestamped filename and deletes it via the Files API afterward.
 - Do not assume or hardcode a Viya test cluster for future testing work
   (Workbench example scripts, a second live-test file, a follow-up PR) —
   ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`
@@ -1574,6 +1586,13 @@ Expected: PASS.
 Create `tests/testthat/test-live-cas.R`:
 
 ```r
+# This test needs a Viya deployment whose CAS server is actually running
+# (GET /casManagement/servers/{server}/state == "running") -- during
+# development the primary test cluster's CAS backend was found stuck in
+# "starting" with a DNS lookup failure for its pod, an environment issue
+# unrelated to viyar's code. If this test 404s where the others in this
+# directory pass, check that cluster's CAS state before assuming a
+# regression; point VIYA_URL at a different deployment if needed.
 test_that("caslib listing and load/unload round-trip", {
   skip_if_no_viya()
   h <- viya_session()
