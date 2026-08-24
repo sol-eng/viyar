@@ -1,11 +1,18 @@
+.viya_url_from_integration <- function(int) {
+  src <- int$issuer %||% int$token_url %||% int$auth_url
+  if (is.null(src)) return(NULL)
+  sub("/SASLogon/.*$", "", src)
+}
+
 #' Get or set viyar configuration
 #'
 #' Configuration is resolved from R options first, then environment
-#' variables: `url` (option `viyar.url` / env `VIYA_URL`), `context`
-#' (option `viyar.context` / env `VIYA_CONTEXT`, default
-#' `"SAS Studio compute context"`), `cas_server` (option
-#' `viyar.cas_server` / env `VIYA_CAS_SERVER`, default
-#' `"cas-shared-default"`), and `wb_integration` (option
+#' variables: `url` (option `viyar.url` / env `VIYA_URL`; if still unset
+#' and running inside Posit Workbench, auto-detected from the matching
+#' OAuth integration's issuer URL), `context` (option `viyar.context` /
+#' env `VIYA_CONTEXT`, default `"SAS Studio compute context"`),
+#' `cas_server` (option `viyar.cas_server` / env `VIYA_CAS_SERVER`,
+#' default `"cas-shared-default"`), and `wb_integration` (option
 #' `viyar.wb_integration` / env `VIYA_WB_INTEGRATION`, a regex matching the
 #' Posit Workbench managed-credential integration name, default
 #' `"^sas-viya$"`).
@@ -24,18 +31,27 @@ viya_config <- function(...) {
   new <- list(...)
   for (nm in names(new)) options(structure(list(new[[nm]]),
                                            names = paste0("viyar.", nm)))
+
+  wb_integration <- getOption("viyar.wb_integration",
+                              Sys.getenv("VIYA_WB_INTEGRATION",
+                                         unset = "^sas-viya$"))
+  url <- getOption("viyar.url", Sys.getenv("VIYA_URL", unset = ""))
+  if (!nzchar(url) && requireNamespace("rstudioapi", quietly = TRUE) &&
+      isTRUE(rstudioapi::isAvailable())) {
+    int <- tryCatch(rstudioapi::findOAuthIntegration(name = wb_integration),
+                    error = function(e) NULL)
+    if (!is.null(int)) url <- .viya_url_from_integration(int) %||% ""
+  }
+
   cfg <- list(
-    url = sub("/+$", "",
-          getOption("viyar.url", Sys.getenv("VIYA_URL", unset = ""))),
+    url = sub("/+$", "", url),
     context = getOption("viyar.context",
                         Sys.getenv("VIYA_CONTEXT",
                                    unset = "SAS Studio compute context")),
     cas_server = getOption("viyar.cas_server",
                            Sys.getenv("VIYA_CAS_SERVER",
                                       unset = "cas-shared-default")),
-    wb_integration = getOption("viyar.wb_integration",
-                               Sys.getenv("VIYA_WB_INTEGRATION",
-                                          unset = "^sas-viya$"))
+    wb_integration = wb_integration
   )
   if (length(new)) invisible(cfg) else cfg
 }

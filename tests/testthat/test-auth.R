@@ -84,3 +84,40 @@ test_that("a clear error is thrown when nothing is available", {
                                   .package = "rstudioapi")
   expect_error(viya_token(), "viya_login\\(\\)")
 })
+
+test_that(".viya_url_from_integration strips the /SASLogon suffix", {
+  expect_equal(
+    .viya_url_from_integration(list(
+      issuer = "https://viya.pcluster.soleng.posit.it/SASLogon/oauth/token")),
+    "https://viya.pcluster.soleng.posit.it")
+  expect_equal(
+    .viya_url_from_integration(list(
+      token_url = "https://viya.example.com/SASLogon/oauth/token")),
+    "https://viya.example.com")
+  expect_null(.viya_url_from_integration(list()))
+})
+
+test_that("viya_config() auto-detects the URL from Workbench when unset", {
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) TRUE,
+    findOAuthIntegration = function(...) list(
+      issuer = "https://viya.pcluster.soleng.posit.it/SASLogon/oauth/token"),
+    .package = "rstudioapi")
+
+  expect_equal(viya_config()$url, "https://viya.pcluster.soleng.posit.it")
+})
+
+test_that("viya_config() prefers an explicitly configured URL over auto-detection", {
+  withr::local_envvar(VIYA_URL = "")
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) TRUE,
+    findOAuthIntegration = function(...) list(
+      issuer = "https://auto-detected.example.com/SASLogon/oauth/token"),
+    .package = "rstudioapi")
+
+  viya_config(url = "https://explicit.example.com")
+  expect_equal(viya_config()$url, "https://explicit.example.com")
+  withr::local_options(viyar.url = NULL)
+})
