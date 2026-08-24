@@ -1371,16 +1371,48 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
 
 - Live tests are not wired into CI (no Viya credentials available there)
   — they're a local developer/agent tool, not a merge gate.
-- `viya_login()`'s `redirect_uri` handling was validated against the
-  `vscode-positron` client on the `soleng` test cluster specifically;
-  a different Viya deployment's client registration may need an explicit
-  `redirect_uri` passed in.
+- `viya_login()`'s `redirect_uri` defaults to the OAuth out-of-band value
+  (`urn:ietf:wg:oauth:2.0:oob`), which is SAS's own documented pattern for
+  CLI-style paste-back logins — confirmed against developer.sas.com, not
+  assumed. `client_id = "vscode-positron"` is NOT itself a SAS-documented
+  default client (SAS's VS Code extension docs name `vscode`) — it only
+  works if separately registered on the target Viya deployment. Validated
+  against the `soleng` test cluster specifically; if login ever fails with
+  an invalid-client error on a different deployment, this is why.
 - `viya_write()`/`viya_load_table()` warn (not error) on a non-"completed"
   job state — callers checking `r$state` themselves is still on them.
 - Do not assume or hardcode a Viya test cluster for future testing work
   (Workbench example scripts, a second live-test file, a follow-up PR) —
   ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`
   (used by this PR's live tests) stays as-is for this PR; don't retarget it.
+- A documentation audit against developer.sas.com/rest-apis (cross-checked
+  live, not from GitHub examples — those are known to lag behind API
+  changes) surfaced further gaps worth a follow-up PR, not addressed here:
+  - **Pagination**: every list-returning function (`viya_contexts`,
+    `viya_sessions`, `viya_caslib_files`, `viya_caslib_tables`,
+    `viya_librefs`, `viya_datasets`, folder `members`, and `viya_read()`'s
+    `columns` call) takes one page at a single hardcoded `limit` and never
+    follows the documented `links.next` hypermedia relation — a collection
+    larger than that limit is silently truncated with no warning.
+  - **Compute job polling**: `viya_submit()` busy-polls
+    `/jobs/{id}/state` with `Sys.sleep()`; the Compute service documents a
+    `wait=`/`If-None-Match` long-poll pattern (304 on no change) intended
+    to replace exactly this kind of loop.
+  - **CAS table loading**: `viya_load_table()` submits generated
+    `PROC CASUTIL` code through the Compute service; CAS Management's own
+    REST API documents a direct `PUT .../tables/{table}/state?value=loaded`
+    action (with `replace`/`scope` options) that could do this without
+    Compute-service code submission or the `_VIYARC_` session-naming
+    convention.
+  - **Error body richness**: `.viya_error_body()` only surfaces
+    `message`/`remediation`; SAS's vendor error type likely also carries
+    `errorCode`, `details`, and `httpStatusCode` — capturing `errorCode`
+    structurally would let `viya_session()`'s retry logic match on it
+    directly instead of substring-matching error text for code `5830`.
+  - **File uploads**: `viya_upload()` never sends an explicit
+    `Content-Type` header (only `Content-Disposition`); SAS's docs say
+    each file needs "a specified name and content type" — unverified
+    whether this causes wrong stored MIME types in practice.
 ```
 
 - [ ] **Step 2: Commit**
