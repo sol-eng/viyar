@@ -69,24 +69,32 @@ Resolution order in `viya_token()`:
 
 1. `VIYA_TOKEN` env var.
 2. A still-fresh cached token (from either of the paths below).
-3. Posit Workbench managed OAuth via `rstudioapi`, when
-   `rstudioapi::isAvailable(child_ok = TRUE)` is `TRUE` and a matching
-   integration exists (name regex: `viya_config()$wb_integration`, default
-   `^sas-viya$`). **Always pass `child_ok = TRUE`** — found live:
-   `rstudioapi::isAvailable()` defaults to reporting `FALSE` whenever the
-   current R process is a *child* of the main IDE session (an RStudio/
-   Positron background Job, a notebook's own execution kernel, or the
-   process `quarto render` knits the document in) — this is intentional
-   upstream behavior (see `?rstudioapi::isAvailable`), not a bug. Passing
-   `child_ok = TRUE` asks rstudioapi to relay the availability check back
-   to the parent session instead, which resolves it correctly for a real
-   RStudio/Positron Job with a live RPC channel to the parent (e.g.
-   rendering from inside the IDE). It does NOT help for a fully detached
-   process with no parent connection at all (e.g. `quarto render` run
-   from a plain terminal outside any IDE) — that case still needs
-   `VIYA_URL`/`viya_config(url = ...)` set explicitly.
-   `.viya_no_url_error()` (in `R/auth.R`) detects the still-unavailable
-   case and appends that hint to the "No Viya URL configured" error.
+3. Posit Workbench managed OAuth via `rstudioapi::findOAuthIntegration()`/
+   `getOAuthCredentials()` (name regex: `viya_config()$wb_integration`,
+   default `^sas-viya$`). **Deliberately does NOT gate on
+   `rstudioapi::isAvailable()`.** Found live (a real bug, shipped and then
+   corrected): `isAvailable()` checks a stricter, unrelated condition —
+   "is this process an RStudio-family GUI frontend" — which is `FALSE`
+   inside any child process (an RStudio/Positron background Job, a
+   notebook's own execution kernel, or the process `quarto render` knits
+   a document in), even when the parent session is genuinely
+   Workbench-connected. But `findOAuthIntegration()`/
+   `getOAuthCredentials()` don't actually depend on that at all — they
+   internally call `assertWorkbenchSession()`, a plain check of the
+   `POSIT_PRODUCT`/`RS_SERVER_ADDRESS` env vars (mirrored here by
+   `.viya_in_workbench_session()`), which every subprocess inherits. So
+   `viya_config()`/`viya_token()` call these functions unconditionally
+   (once `rstudioapi` is confirmed installed) and let `tryCatch` handle
+   the "not in Workbench at all" case by falling through — this makes
+   auto-detection work correctly from `quarto render`/a background Job/a
+   notebook kernel, as long as that process is genuinely running inside a
+   Workbench session. A `child_ok = TRUE` fix was tried first and shipped
+   briefly; it only relayed through a live RStudio Job RPC channel and
+   didn't address the real cause, so it was replaced by this fix.
+   `.viya_no_url_error()` (in `R/auth.R`) appends a hint to the "No Viya
+   URL configured" error specifically when `.viya_in_workbench_session()`
+   is `FALSE` — i.e. not in Workbench at all (local desktop R, or
+   `quarto render` run entirely outside Workbench).
 4. A cached SSO token from `viya_login()`, refreshed via its
    `refresh_token` if expired.
 5. Otherwise: an error pointing at `viya_login()`/`VIYA_TOKEN`.
