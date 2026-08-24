@@ -4,13 +4,17 @@
 \alias{viya_reachable}
 \title{Check whether the Viya server is reachable}
 \usage{
-viya_reachable(url = viya_config()$url, timeout_s = 5)
+viya_reachable(url = viya_config()$url, timeout_s = 5, insecure = FALSE)
 }
 \arguments{
 \item{url}{Viya base URL. Defaults to the configured URL
 (see [viya_config()]).}
 
 \item{timeout_s}{Probe timeout in seconds.}
+
+\item{insecure}{Skip TLS certificate/host verification. Only set this
+for a cluster with a self-signed certificate you already trust —
+the default verifies TLS.}
 }
 \value{
 `TRUE` if the server answered, `FALSE` otherwise.

@@ -36,7 +36,11 @@ viya_end(h)
 ## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name
-  configurable, default `^sas-viya$`).
+  configurable, default `^sas-viya$`). The Viya URL is auto-detected from
+  the integration if `viya_config(url = ...)`/`VIYA_URL` isn't set.
+- Local desktop R (outside Workbench): `viya_login()` opens a browser SSO
+  login (authorization code + PKCE) and caches the resulting token,
+  refreshing it automatically as it nears expiry.
 - Posit Connect: obtain a viewer token with connectapi and pass it:
   `viya_session(token = viewer_token)`.
 - Anywhere: set `VIYA_TOKEN`.

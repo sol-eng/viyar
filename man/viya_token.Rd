@@ -7,16 +7,18 @@
 viya_token(refresh = FALSE)
 }
 \arguments{
-\item{refresh}{Force re-acquisition instead of returning the cached
-token (Viya access tokens typically last around 10 hours).}
+\item{refresh}{Force re-acquisition instead of returning a still-fresh
+cached token (Viya access tokens typically last around 10 hours).}
 }
 \value{
 An OAuth access token (character scalar).
 }
 \description{
-Resolution order: the `VIYA_TOKEN` environment variable if set;
-otherwise Posit Workbench managed OAuth credentials via `rstudioapi`
-(interactive Workbench sessions). On Posit Connect with viewer OAuth
+Resolution order: the `VIYA_TOKEN` environment variable if set; a
+still-fresh cached token from a previous call; Posit Workbench managed
+OAuth credentials via `rstudioapi` (interactive Workbench sessions);
+a cached SSO token from [viya_login()], refreshed silently if it's
+expired or about to expire. On Posit Connect with viewer OAuth
 integrations, obtain the token yourself (e.g.
 `connectapi::get_oauth_credentials()` with the viewer session token) and
 pass it to [viya_session()] via its `token` argument.
