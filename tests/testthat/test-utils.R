@@ -61,3 +61,21 @@ test_that("viya_reachable() returns FALSE for an unreachable host", {
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1))
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1, insecure = TRUE))
 })
+
+mk_jwt <- function(exp) {
+  payload <- as.character(jsonlite::toJSON(list(exp = exp), auto_unbox = TRUE))
+  seg <- openssl::base64_encode(charToRaw(payload))
+  seg <- chartr("+/", "-_", sub("=+$", "", seg))
+  paste("header", seg, "sig", sep = ".")
+}
+
+test_that(".jwt_exp decodes the exp claim from a base64url JWT payload", {
+  target <- as.POSIXct(1893456003, origin = "1970-01-01", tz = "UTC")
+  decoded <- .jwt_exp(mk_jwt(1893456003))
+  expect_equal(as.numeric(decoded), as.numeric(target))
+})
+
+test_that(".jwt_exp returns NA for a non-JWT or malformed token", {
+  expect_true(is.na(.jwt_exp("not-a-jwt")))
+  expect_true(is.na(.jwt_exp("")))
+})

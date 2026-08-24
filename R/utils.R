@@ -45,3 +45,23 @@ viya_reachable <- function(url = viya_config()$url, timeout_s = 5,
     curl::curl_fetch_memory(url, handle = hd); TRUE
   }, error = function(e) FALSE)
 }
+
+#' Decode a JWT's `exp` claim
+#'
+#' Used to know when a cached access token expires ahead of time, rather
+#' than discovering it via a 401 mid-workflow.
+#'
+#' @param token A JWT access token (or any string — non-JWTs return `NA`).
+#' @return A POSIXct expiry time, or `NA` if `token` isn't a parseable
+#'   JWT with an `exp` claim.
+.jwt_exp <- function(token) {
+  parts <- strsplit(token, ".", fixed = TRUE)[[1]]
+  if (length(parts) < 2) return(as.POSIXct(NA))
+  b64 <- chartr("-_", "+/", parts[2])
+  b64 <- paste0(b64, strrep("=", (4 - nchar(b64) %% 4) %% 4))
+  payload <- tryCatch(
+    jsonlite::fromJSON(rawToChar(openssl::base64_decode(b64))),
+    error = function(e) NULL)
+  if (is.null(payload$exp)) return(as.POSIXct(NA))
+  as.POSIXct(payload$exp, origin = "1970-01-01", tz = "UTC")
+}
