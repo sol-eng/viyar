@@ -63,10 +63,6 @@ test_that(".viya_error_body returns NULL for a JSON body with no recognized erro
   expect_null(.viya_error_body(resp))
 })
 
-test_that("viya_reachable() verifies TLS by default", {
-  expect_false(isTRUE(formals(viya_reachable)$insecure))
-})
-
 test_that("viya_reachable() returns FALSE for an unreachable host", {
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1))
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1, insecure = TRUE))

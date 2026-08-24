@@ -70,7 +70,7 @@ test_that(".viya_token_exchange sets a 30-second timeout", {
   resp <- httr2::response_json(status = 200, body = list(access_token = "AT"))
   httr2::local_mocked_responses(function(req) { seen <<- req; resp })
   .viya_token_exchange("https://viya.example.com", list(grant_type = "x"))
-  expect_equal(seen$options$timeout, 30000)
+  expect_equal(seen$options$timeout_ms, 30000)
 })
 
 test_that(".viya_cache_token populates the token cache from a token response", {

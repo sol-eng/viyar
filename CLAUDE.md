@@ -9,16 +9,24 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
 - `R/auth.R` — `viya_config()` (URL/context/cas_server/wb_integration
   resolution, with Workbench auto-detection of the URL) and `viya_token()`
   (the auth resolution chain below). `.token_cache` (an env) holds the
-  active token/refresh token/expiry/client_id across calls in a session.
+  active token/refresh token/expiry/client_id/login-url across calls in a
+  session — the login URL is cached so a silent refresh always targets
+  the server actually logged into, not whatever `viya_config()$url`
+  happens to be at refresh time.
 - `R/login.R` — `viya_login()`: interactive browser SSO (OAuth
   authorization code + PKCE) for use outside Workbench, plus its
   supporting helpers (PKCE generation, redirect/code parsing, token
-  exchange).
+  exchange — the exchange call has its own 30s timeout, since it's the
+  one REST call in the package that doesn't go through `.viya_req()`).
 - `R/utils.R` — `.viya_req()` is the single internal request builder
   every other file goes through: bearer auth, timeout, retry on
-  transient 429/5xx, and Viya JSON error-body surfacing. Also
-  `viya_reachable()` (network probe) and `.jwt_exp()` (token expiry
-  decoding).
+  transient 429/503 (matching httr2's own safe default — 500/502/504 are
+  deliberately excluded since this package makes non-idempotent POSTs:
+  starting sessions, submitting SAS code, uploading files), and Viya JSON
+  error-body surfacing (via exact-match `[[`, not `$`, to avoid partial
+  name matches producing garbled text). Also `viya_reachable()` (network
+  probe, TLS-verifying by default; opt out via the `viyar.insecure`
+  option) and `.jwt_exp()` (token expiry decoding).
 - `R/session.R` — compute session lifecycle: `viya_session()` (start,
   with reachability-gated retry through Viya errorCode 5830 pod-launch
   timeouts), `viya_end()`, `viya_sessions()`, `viya_kill()`,
