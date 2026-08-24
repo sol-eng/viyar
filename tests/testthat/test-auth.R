@@ -4,10 +4,6 @@ mk_jwt <- function(exp) {
   paste("h", seg, "s", sep = ".")
 }
 
-reset_token_cache <- function() {
-  rm(list = ls(envir = .token_cache), envir = .token_cache)
-}
-
 test_that("VIYA_TOKEN env var always wins", {
   withr::local_envvar(VIYA_TOKEN = "env-token")
   expect_equal(viya_token(), "env-token")
@@ -15,7 +11,7 @@ test_that("VIYA_TOKEN env var always wins", {
 
 test_that("a fresh cached token is returned without any network call", {
   withr::local_envvar(VIYA_TOKEN = "")
-  reset_token_cache()
+  local_token_cache()
   .token_cache$tok <- "cached-tok"
   .token_cache$exp <- Sys.time() + 3600
   testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
@@ -26,11 +22,12 @@ test_that("a fresh cached token is returned without any network call", {
 
 test_that("an expired cached token refreshes via the stored refresh_token", {
   withr::local_envvar(VIYA_TOKEN = "")
-  reset_token_cache()
+  local_token_cache()
   .token_cache$tok <- mk_jwt(as.numeric(Sys.time()) - 10)
   .token_cache$exp <- .jwt_exp(.token_cache$tok)
   .token_cache$refresh <- "refresh-abc"
   .token_cache$client_id <- "vscode-positron"
+  .token_cache$url <- "https://viya.example.com"
   testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
                                   .package = "rstudioapi")
 
@@ -42,14 +39,36 @@ test_that("an expired cached token refreshes via the stored refresh_token", {
 
   out <- viya_token()
   expect_equal(out, new_access)
+  expect_equal(seen$url, "https://viya.example.com/SASLogon/oauth/token")
   expect_equal(as.character(seen$body$data$grant_type), "refresh_token")
   expect_equal(as.character(seen$body$data$refresh_token), "refresh-abc")
   expect_equal(.token_cache$refresh, "refresh-def")
 })
 
+test_that("a refresh response omitting refresh_token preserves the existing one", {
+  withr::local_envvar(VIYA_TOKEN = "")
+  local_token_cache()
+  .token_cache$tok <- mk_jwt(as.numeric(Sys.time()) - 10)
+  .token_cache$exp <- .jwt_exp(.token_cache$tok)
+  .token_cache$refresh <- "refresh-abc"
+  .token_cache$client_id <- "vscode-positron"
+  .token_cache$url <- "https://viya.example.com"
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+
+  new_access <- mk_jwt(as.numeric(Sys.time()) + 36000)
+  # Server does NOT include refresh_token in this response (non-rotating server).
+  resp <- httr2::response_json(status = 200, body = list(access_token = new_access))
+  httr2::local_mocked_responses(list(resp))
+
+  out <- viya_token()
+  expect_equal(out, new_access)
+  expect_equal(.token_cache$refresh, "refresh-abc")  # preserved, not wiped to NULL
+})
+
 test_that("Workbench managed OAuth is tried when rstudioapi reports available", {
   withr::local_envvar(VIYA_TOKEN = "")
-  reset_token_cache()
+  local_token_cache()
   tok <- mk_jwt(as.numeric(Sys.time()) + 36000)
   testthat::local_mocked_bindings(
     isAvailable = function(...) TRUE,
@@ -67,7 +86,7 @@ test_that("a non-Workbench RStudio/Positron session falls through instead of err
   # Workbench session and throws otherwise -- viya_token() must catch that
   # and fall through to its next resolution step, not propagate the error.
   withr::local_envvar(VIYA_TOKEN = "")
-  reset_token_cache()
+  local_token_cache()
   testthat::local_mocked_bindings(
     isAvailable = function(...) TRUE,
     findOAuthIntegration = function(...)
@@ -79,7 +98,7 @@ test_that("a non-Workbench RStudio/Positron session falls through instead of err
 
 test_that("a clear error is thrown when nothing is available", {
   withr::local_envvar(VIYA_TOKEN = "")
-  reset_token_cache()
+  local_token_cache()
   testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
                                   .package = "rstudioapi")
   expect_error(viya_token(), "viya_login\\(\\)")

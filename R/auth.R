@@ -112,13 +112,17 @@ viya_token <- function(refresh = FALSE) {
   }
 
   if (!is.null(.token_cache$refresh)) {
+    refresh_url <- .token_cache$url %||% viya_config()$url
     resp <- tryCatch(
-      .viya_token_exchange(viya_config()$url, list(
+      .viya_token_exchange(refresh_url, list(
         grant_type = "refresh_token",
         client_id = .token_cache$client_id,
         refresh_token = .token_cache$refresh)),
-      error = function(e) NULL)
-    if (!is.null(resp)) return(.viya_cache_token(resp, .token_cache$client_id))
+      error = function(e) {
+        message("Viya token refresh failed: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(resp)) return(.viya_cache_token(resp, .token_cache$client_id, refresh_url))
   }
 
   stop("No Viya token available. Set VIYA_TOKEN, run inside Posit Workbench ",

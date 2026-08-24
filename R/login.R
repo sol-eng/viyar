@@ -36,16 +36,18 @@
 .viya_token_exchange <- function(url, body) {
   httr2::request(paste0(url, "/SASLogon/oauth/token")) |>
     httr2::req_headers(Accept = "application/json") |>
+    httr2::req_timeout(30) |>
     (\(req) do.call(httr2::req_body_form, c(list(req), body)))() |>
     httr2::req_error(body = .viya_error_body) |>
     httr2::req_perform() |> httr2::resp_body_json()
 }
 
-.viya_cache_token <- function(resp, client_id) {
+.viya_cache_token <- function(resp, client_id, url = .token_cache$url) {
   .token_cache$tok <- resp$access_token
-  .token_cache$refresh <- resp$refresh_token
+  .token_cache$refresh <- resp$refresh_token %||% .token_cache$refresh
   .token_cache$exp <- .jwt_exp(resp$access_token)
   .token_cache$client_id <- client_id
+  .token_cache$url <- url
   invisible(resp$access_token)
 }
 
@@ -104,7 +106,7 @@ viya_login <- function(url = viya_config()$url,
                code = code, code_verifier = verifier)
   if (!is.null(redirect_uri)) body$redirect_uri <- redirect_uri
   resp <- .viya_token_exchange(url, body)
-  tok  <- .viya_cache_token(resp, client_id)
+  tok  <- .viya_cache_token(resp, client_id, url)
   message("Viya login succeeded; token cached",
           if (!is.na(.token_cache$exp))
             paste0(" (expires ", format(.token_cache$exp, usetz = TRUE), ")")

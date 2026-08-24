@@ -48,7 +48,10 @@ viya_session <- function(context = viya_config()$context,
   h <- list(token = token, base = url)
   for (i in seq_len(tries)) {
     if (!viya_reachable(url)) {
-      message("viya unreachable, waiting ", wait, "s (", i, "/", tries, ")")
+      hint <- if (grepl("^https://", url))
+        " (if this is a self-signed cluster, try viya_reachable(url, insecure = TRUE) to check)"
+      else ""
+      message("viya unreachable, waiting ", wait, "s (", i, "/", tries, ")", hint)
       Sys.sleep(wait); next
     }
     res <- tryCatch(

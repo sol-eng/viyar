@@ -1,9 +1,9 @@
-test_that(".viya_is_transient flags retryable statuses only", {
+test_that(".viya_is_transient flags only 429/503 (matching httr2's own safe default)", {
   expect_true(.viya_is_transient(httr2::response(status = 429)))
-  expect_true(.viya_is_transient(httr2::response(status = 500)))
-  expect_true(.viya_is_transient(httr2::response(status = 502)))
   expect_true(.viya_is_transient(httr2::response(status = 503)))
-  expect_true(.viya_is_transient(httr2::response(status = 504)))
+  expect_false(.viya_is_transient(httr2::response(status = 500)))
+  expect_false(.viya_is_transient(httr2::response(status = 502)))
+  expect_false(.viya_is_transient(httr2::response(status = 504)))
   expect_false(.viya_is_transient(httr2::response(status = 200)))
   expect_false(.viya_is_transient(httr2::response(status = 404)))
 })
@@ -53,6 +53,16 @@ test_that(".viya_req surfaces the error message for a vendor +json content type"
   expect_match(conditionMessage(err), "Use viya_caslib_tables", fixed = TRUE)
 })
 
+test_that(".viya_error_body ignores an errors array when there's no top-level message (no partial match)", {
+  resp <- httr2::response_json(status = 403, body = list(errors = list(list(code = 1))))
+  expect_null(.viya_error_body(resp))
+})
+
+test_that(".viya_error_body returns NULL for a JSON body with no recognized error fields", {
+  resp <- httr2::response_json(status = 500, body = list(foo = "bar"))
+  expect_null(.viya_error_body(resp))
+})
+
 test_that("viya_reachable() verifies TLS by default", {
   expect_false(isTRUE(formals(viya_reachable)$insecure))
 })
@@ -60,6 +70,15 @@ test_that("viya_reachable() verifies TLS by default", {
 test_that("viya_reachable() returns FALSE for an unreachable host", {
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1))
   expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1, insecure = TRUE))
+})
+
+test_that("viya_reachable()'s insecure default reads the viyar.insecure option", {
+  withr::local_options(viyar.insecure = TRUE)
+  expect_true(eval(formals(viya_reachable)$insecure))
+  expect_false(viya_reachable("http://127.0.0.1:1", timeout_s = 1))
+
+  withr::local_options(viyar.insecure = NULL)
+  expect_false(eval(formals(viya_reachable)$insecure))
 })
 
 mk_jwt <- function(exp) {

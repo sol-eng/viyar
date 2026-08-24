@@ -1,15 +1,17 @@
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 .viya_is_transient <- function(resp) {
-  httr2::resp_status(resp) %in% c(429, 500, 502, 503, 504)
+  httr2::resp_status(resp) %in% c(429, 503)
 }
 
 .viya_error_body <- function(resp) {
   body <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
   if (is.null(body)) return(NULL)
-  msg <- body$message %||% body$error_description %||% body$error %||% NULL
-  rem <- body$remediation %||% NULL
-  paste(c(msg, rem), collapse = " ")
+  msg <- body[["message"]] %||% body[["error_description"]] %||% body[["error"]]
+  rem <- body[["remediation"]]
+  out <- paste(c(msg, rem), collapse = " ")
+  if (!nzchar(out)) return(NULL)
+  out
 }
 
 .viya_req <- function(h, path) {
@@ -30,7 +32,8 @@
 #' @param timeout_s Probe timeout in seconds.
 #' @param insecure Skip TLS certificate/host verification. Only set this
 #'   for a cluster with a self-signed certificate you already trust —
-#'   the default verifies TLS.
+#'   the default verifies TLS. Defaults to the `viyar.insecure` option if
+#'   set, otherwise `FALSE`.
 #' @return `TRUE` if the server answered, `FALSE` otherwise.
 #' @examples
 #' \dontrun{
@@ -38,7 +41,7 @@
 #' }
 #' @export
 viya_reachable <- function(url = viya_config()$url, timeout_s = 5,
-                           insecure = FALSE) {
+                           insecure = getOption("viyar.insecure", FALSE)) {
   tryCatch({
     hd <- curl::new_handle(timeout = timeout_s, connecttimeout = timeout_s,
                            ssl_verifypeer = !insecure, ssl_verifyhost = !insecure)
