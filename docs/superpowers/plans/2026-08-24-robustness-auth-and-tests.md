@@ -31,7 +31,10 @@ for docs/NAMESPACE generation.
 - Test cluster for all live testing: `https://viya.pcluster.soleng.posit.it`.
 - OAuth client id for SSO: `vscode-positron`.
 - No CI wiring in this PR — both test tiers run locally via
-  `testthat::test_dir("tests/testthat")` (no devtools dependency needed).
+  `pkgload::load_all("."); testthat::test_dir("tests/testthat")` (`pkgload`
+  loads the uninstalled package's full namespace, including unexported
+  `.foo()` helpers, into the session first — plain `test_dir()` alone
+  cannot see them; no `devtools` dependency needed, `pkgload` is enough).
 - Follow existing code style exactly: base-pipe (`|>`), `httr2::` /
   `utils::` fully-qualified calls (no library() calls in R/ files),
   `message()` for user-facing progress, `stopifnot()` for input
@@ -81,10 +84,17 @@ Imports:
 Suggests:
     rstudioapi,
     connectapi,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    pkgload
 Config/roxygen2/version: 8.1.0
 Config/testthat/edition: 3
 ```
+
+`pkgload` is declared because the local dev-loop test command below
+depends on it directly (`pkgload::load_all(".")` loads the uninstalled
+package's full namespace — including unexported `.foo()` helpers — before
+`testthat::test_dir()` runs; plain `test_dir()` alone cannot see them). It
+was already installed transitively as a `testthat` build dependency.
 
 - [ ] **Step 2: Create the testthat entry point**
 
@@ -140,6 +150,23 @@ test_that(".viya_req falls back to the default httr2 message for non-JSON errors
   expect_match(conditionMessage(err), "HTTP 500")
 })
 
+test_that(".viya_req surfaces the error message for a vendor +json content type", {
+  # SAS Viya REST services commonly return application/vnd.sas.error+json
+  # rather than bare application/json.
+  resp <- httr2::response(
+    status = 400,
+    headers = list("Content-Type" = "application/vnd.sas.error+json"),
+    body = charToRaw(as.character(jsonlite::toJSON(
+      list(message = "Invalid caslib name.", remediation = "Use viya_caslib_tables() to list valid names."),
+      auto_unbox = TRUE))))
+  httr2::local_mocked_responses(list(resp))
+  h <- list(token = "t", base = "https://viya.example.com")
+  err <- tryCatch(.viya_req(h, "/x") |> httr2::req_perform(), error = function(e) e)
+  expect_s3_class(err, "error")
+  expect_match(conditionMessage(err), "Invalid caslib name", fixed = TRUE)
+  expect_match(conditionMessage(err), "Use viya_caslib_tables", fixed = TRUE)
+})
+
 test_that("viya_reachable() verifies TLS by default", {
   expect_false(isTRUE(formals(viya_reachable)$insecure))
 })
@@ -152,7 +179,7 @@ test_that("viya_reachable() returns FALSE for an unreachable host", {
 
 - [ ] **Step 4: Run the tests to verify they fail**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'` from the package
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'` from the package
 root.
 Expected: FAIL — `.viya_is_transient`, `.viya_error_body` not found, and
 `viya_reachable` still hard-codes TLS verification off.
@@ -169,8 +196,6 @@ Replace the full contents of `R/utils.R` with:
 }
 
 .viya_error_body <- function(resp) {
-  ct <- httr2::resp_content_type(resp)
-  if (!identical(ct, "application/json")) return(NULL)
   body <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
   if (is.null(body)) return(NULL)
   msg <- body$message %||% body$error_description %||% body$error %||% NULL
@@ -215,8 +240,8 @@ viya_reachable <- function(url = viya_config()$url, timeout_s = 5,
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (6 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (7 tests, 0 failures).
 
 - [ ] **Step 7: Commit**
 
@@ -264,7 +289,7 @@ test_that(".jwt_exp returns NA for a non-JWT or malformed token", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — `.jwt_exp` not found.
 
 - [ ] **Step 3: Implement**
@@ -295,8 +320,8 @@ Append to `R/utils.R`:
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (8 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (9 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -339,7 +364,7 @@ test_that(".pkce_verifier generates a spec-compliant random verifier", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — `.pkce_challenge`/`.pkce_verifier` not found.
 
 - [ ] **Step 3: Implement**
@@ -361,8 +386,8 @@ Create `R/login.R` with:
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (10 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (11 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -418,7 +443,7 @@ test_that(".parse_auth_code errors when no code is present", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — `.parse_auth_code` not found.
 
 - [ ] **Step 3: Implement**
@@ -452,8 +477,8 @@ Append to `R/login.R`:
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (14 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (15 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -530,7 +555,7 @@ test_that(".viya_cache_token populates the token cache from a token response", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — `.viya_token_exchange`/`.viya_cache_token` not found.
 
 - [ ] **Step 3: Implement**
@@ -561,8 +586,8 @@ import is needed.
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (17 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (18 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -767,7 +792,7 @@ test_that("a clear error is thrown when nothing is available", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — current `viya_token()` doesn't check `rstudioapi::isAvailable()`
 first (so the "available FALSE" mocks don't prevent a real
 `findOAuthIntegration()` attempt) and has no refresh-token path;
@@ -781,6 +806,7 @@ Suggests:
     rstudioapi,
     connectapi,
     testthat (>= 3.0.0),
+    pkgload,
     withr
 ```
 
@@ -850,8 +876,8 @@ viya_token <- function(refresh = FALSE) {
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (22 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (23 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -926,7 +952,7 @@ test_that("viya_config() prefers an explicitly configured URL over auto-detectio
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — `.viya_url_from_integration` not found; `viya_config()`
 has no auto-detection.
 
@@ -997,8 +1023,8 @@ viya_config <- function(...) {
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (25 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (26 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -1057,7 +1083,7 @@ test_that("viya_members validates its handle", {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: FAIL — these functions currently attempt a (mocked-away, so
 actually network-erroring) HTTP call instead of raising a validation
 error, so the `expect_error()` messages/reasons won't match (some may
@@ -1130,8 +1156,8 @@ every other line of each function is unchanged.)
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
-Expected: PASS (28 tests, 0 failures).
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+Expected: PASS (29 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -1291,7 +1317,7 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   mocked via `httr2::local_mocked_responses()` and
   `testthat::local_mocked_bindings()` (for `rstudioapi` calls). No
   network, safe to run anywhere:
-  `Rscript -e 'testthat::test_dir("tests/testthat")'`
+  `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 - **Live** (`tests/testthat/test-live-*.R`): real calls against
   `https://viya.pcluster.soleng.posit.it`. Before running these:
   1. `viya_config(url = "https://viya.pcluster.soleng.posit.it")`
@@ -1418,7 +1444,7 @@ test_that("viya_contexts and viya_sessions return well-formed data frames", {
 
 - [ ] **Step 4: Run against the live cluster**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: PASS. If it fails, apply `superpowers:systematic-debugging`
 before touching any test assertions — a live-cluster failure is real
 signal, not a flaky test to loosen.
@@ -1458,7 +1484,7 @@ test_that("viya_upload then viya_download round-trips a file", {
 
 - [ ] **Step 6: Run against the live cluster**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: PASS.
 
 - [ ] **Step 7: Write the live CAS test**
@@ -1487,7 +1513,7 @@ test_that("caslib listing and load/unload round-trip", {
 
 - [ ] **Step 8: Run the full suite (unit + live) one final time**
 
-Run: `Rscript -e 'testthat::test_dir("tests/testthat")'`
+Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
 Expected: PASS across all unit and live tests.
 
 - [ ] **Step 9: Commit**
@@ -1532,7 +1558,7 @@ gh pr create --title "Add SSO login, harden REST error handling, and add a test 
   run each test tier for future work.
 
 ## Test plan
-- [x] `testthat::test_dir("tests/testthat")` — unit tests pass offline.
+- [x] `pkgload::load_all("."); testthat::test_dir("tests/testthat")` — unit tests pass offline.
 - [x] Live tests pass against the soleng test cluster after `viya_login()`.
 - [x] `roxygen2::roxygenise()` regenerated docs/NAMESPACE cleanly.
 EOF
