@@ -1,0 +1,126 @@
+# viyar
+
+R package connecting to SAS Viya over REST only (Compute, CAS Management,
+Files/Folders) — no Python, no `swat` requirement for Compute. See
+`README.md` for the user-facing quick start.
+
+## Architecture
+
+- `R/auth.R` — `viya_config()` (URL/context/cas_server/wb_integration
+  resolution, with Workbench auto-detection of the URL) and `viya_token()`
+  (the auth resolution chain below). `.token_cache` (an env) holds the
+  active token/refresh token/expiry/client_id across calls in a session.
+- `R/login.R` — `viya_login()`: interactive browser SSO (OAuth
+  authorization code + PKCE) for use outside Workbench, plus its
+  supporting helpers (PKCE generation, redirect/code parsing, token
+  exchange).
+- `R/utils.R` — `.viya_req()` is the single internal request builder
+  every other file goes through: bearer auth, timeout, retry on
+  transient 429/5xx, and Viya JSON error-body surfacing. Also
+  `viya_reachable()` (network probe) and `.jwt_exp()` (token expiry
+  decoding).
+- `R/session.R` — compute session lifecycle: `viya_session()` (start,
+  with reachability-gated retry through Viya errorCode 5830 pod-launch
+  timeouts), `viya_end()`, `viya_sessions()`, `viya_kill()`,
+  `viya_contexts()`.
+- `R/submit.R` — `viya_submit()` (submit SAS code, poll, fetch log),
+  `viya_librefs()`, `viya_datasets()`, `viya_members()`.
+- `R/cas.R` — caslib table/file listing and `viya_load_table()`/
+  `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
+- `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
+  dataset, via the Compute data service and a CSV-staging `PROC IMPORT`).
+- `R/files.R` — `viya_upload()`/`viya_download()` (Viya Files/Folders).
+
+## The `viyar` S3 handle
+
+Every function except `viya_login()`/`viya_config()`/`viya_token()`/
+`viya_contexts()`/`viya_sessions()`/`viya_kill()`/`viya_reachable()` takes
+a `viyar` handle (`h`) as its first argument — the object `viya_session()`
+returns: `list(token, session, context, base)` tagged with class
+`"viyar"`. `print.viyar()` is its only S3 method.
+
+## Authentication (three paths into `viya_token()`)
+
+Resolution order in `viya_token()`:
+
+1. `VIYA_TOKEN` env var.
+2. A still-fresh cached token (from either of the paths below).
+3. Posit Workbench managed OAuth via `rstudioapi`, when
+   `rstudioapi::isAvailable()` is `TRUE` and a matching integration
+   exists (name regex: `viya_config()$wb_integration`, default
+   `^sas-viya$`).
+4. A cached SSO token from `viya_login()`, refreshed via its
+   `refresh_token` if expired.
+5. Otherwise: an error pointing at `viya_login()`/`VIYA_TOKEN`.
+
+`viya_login(url, client_id = "vscode-positron")` drives an OAuth
+authorization-code + PKCE flow against `{url}/SASLogon/oauth/authorize`
+and `/SASLogon/oauth/token`: it opens a browser, you log in and paste
+back the code (or the full redirect URL — either is accepted), and it
+exchanges that for a token. This is the path to use for local
+Mac/PC development and testing, where Workbench isn't available.
+
+## Testing
+
+Two tiers, both testthat 3e, run locally (no CI wiring yet):
+
+- **Unit** (`tests/testthat/test-*.R`, excluding `test-live-*.R`): fully
+  mocked via `httr2::local_mocked_responses()` and
+  `testthat::local_mocked_bindings()` (for `rstudioapi` calls). No
+  network, safe to run anywhere:
+  `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+- **Live** (`tests/testthat/test-live-*.R`): real calls against
+  `https://viya.pcluster.soleng.posit.it`. Before running these:
+  1. `viya_config(url = "https://viya.pcluster.soleng.posit.it")`
+  2. `viya_login()` (or set `VIYA_TOKEN` directly if you already have a
+     token)
+  3. Then run the same `test_dir()` command — `helper-live.R`'s
+     `skip_if_no_viya()` auto-skips these tests when no URL/token is
+     configured, so it's safe to run the full suite either way.
+
+## Known gaps / follow-ups
+
+- Live tests are not wired into CI (no Viya credentials available there)
+  — they're a local developer/agent tool, not a merge gate.
+- `viya_login()`'s `redirect_uri` defaults to the OAuth out-of-band value
+  (`urn:ietf:wg:oauth:2.0:oob`), which is SAS's own documented pattern for
+  CLI-style paste-back logins — confirmed against developer.sas.com, not
+  assumed. `client_id = "vscode-positron"` is NOT itself a SAS-documented
+  default client (SAS's VS Code extension docs name `vscode`) — it only
+  works if separately registered on the target Viya deployment. Validated
+  against the `soleng` test cluster specifically; if login ever fails with
+  an invalid-client error on a different deployment, this is why.
+- `viya_write()`/`viya_load_table()` warn (not error) on a non-"completed"
+  job state — callers checking `r$state` themselves is still on them.
+- Do not assume or hardcode a Viya test cluster for future testing work
+  (Workbench example scripts, a second live-test file, a follow-up PR) —
+  ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`
+  (used by this PR's live tests) stays as-is for this PR; don't retarget it.
+- A documentation audit against developer.sas.com/rest-apis (cross-checked
+  live, not from GitHub examples — those are known to lag behind API
+  changes) surfaced further gaps worth a follow-up PR, not addressed here:
+  - **Pagination**: every list-returning function (`viya_contexts`,
+    `viya_sessions`, `viya_caslib_files`, `viya_caslib_tables`,
+    `viya_librefs`, `viya_datasets`, folder `members`, and `viya_read()`'s
+    `columns` call) takes one page at a single hardcoded `limit` and never
+    follows the documented `links.next` hypermedia relation — a collection
+    larger than that limit is silently truncated with no warning.
+  - **Compute job polling**: `viya_submit()` busy-polls
+    `/jobs/{id}/state` with `Sys.sleep()`; the Compute service documents a
+    `wait=`/`If-None-Match` long-poll pattern (304 on no change) intended
+    to replace exactly this kind of loop.
+  - **CAS table loading**: `viya_load_table()` submits generated
+    `PROC CASUTIL` code through the Compute service; CAS Management's own
+    REST API documents a direct `PUT .../tables/{table}/state?value=loaded`
+    action (with `replace`/`scope` options) that could do this without
+    Compute-service code submission or the `_VIYARC_` session-naming
+    convention.
+  - **Error body richness**: `.viya_error_body()` only surfaces
+    `message`/`remediation`; SAS's vendor error type likely also carries
+    `errorCode`, `details`, and `httpStatusCode` — capturing `errorCode`
+    structurally would let `viya_session()`'s retry logic match on it
+    directly instead of substring-matching error text for code `5830`.
+  - **File uploads**: `viya_upload()` never sends an explicit
+    `Content-Type` header (only `Content-Disposition`); SAS's docs say
+    each file needs "a specified name and content type" — unverified
+    whether this causes wrong stored MIME types in practice.
