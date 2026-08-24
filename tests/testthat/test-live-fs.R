@@ -5,16 +5,16 @@ test_that("viya_create_folder creates nested SAS Content folders, idempotently",
 
   path <- paste0("/Public/viyar_live_test_", as.integer(Sys.time()))
   fld <- viya_create_folder(h, paste0(path, "/nested/deep"))
+  on.exit(tryCatch({
+    root <- .viya_folder(h, path)
+    .viya_req(h, paste0("/folders/folders/", root$id, "?recursive=true")) |>
+      httr2::req_method("DELETE") |> httr2::req_perform()
+  }, error = function(e) NULL), add = TRUE)
   expect_equal(fld$name, "deep")
 
   # idempotent: re-running creates nothing new and doesn't error
   fld2 <- viya_create_folder(h, paste0(path, "/nested/deep"))
   expect_equal(fld2$id, fld$id)
-
-  # cleanup: delete the whole test tree from SAS Content
-  root <- .viya_folder(h, path)
-  .viya_req(h, paste0("/folders/folders/", root$id, "?recursive=true")) |>
-    httr2::req_method("DELETE") |> httr2::req_perform()
 })
 
 test_that("viya_fs_mkdir/upload/download/list round-trip on the OS filesystem", {

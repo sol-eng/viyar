@@ -1,7 +1,8 @@
 .viya_fs_escape <- function(path) {
   segments <- strsplit(path, "/")[[1]]
   segments <- segments[nzchar(segments)]
-  paste(segments, collapse = "~fs~")
+  prefix <- if (startsWith(path, "/")) "~fs~" else ""
+  utils::URLencode(paste0(prefix, paste(segments, collapse = "~fs~")), reserved = TRUE)
 }
 
 .viya_fs_exists <- function(h, path) {
@@ -35,15 +36,22 @@
 #' }
 #' @export
 viya_fs_mkdir <- function(h, path) {
-  stopifnot(inherits(h, "viyar"), nzchar(path))
+  stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(path))
+  is_absolute <- startsWith(path, "/")
   segments <- strsplit(path, "/")[[1]]
   segments <- segments[nzchar(segments)]
   if (!length(segments)) stop("path must have at least one segment")
 
   for (i in seq_along(segments)) {
     partial <- paste(segments[seq_len(i)], collapse = "/")
+    if (is_absolute) partial <- paste0("/", partial)
     if (!.viya_fs_exists(h, partial)) {
-      parent <- if (i == 1) "." else paste(segments[seq_len(i - 1)], collapse = "/")
+      if (i == 1) {
+        parent <- if (is_absolute) "/" else "."
+      } else {
+        parent <- paste(segments[seq_len(i - 1)], collapse = "/")
+        if (is_absolute) parent <- paste0("/", parent)
+      }
       .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                           .viya_fs_escape(parent))) |>
         httr2::req_method("POST") |>
@@ -71,7 +79,7 @@ viya_fs_mkdir <- function(h, path) {
 #' }
 #' @export
 viya_fs_upload <- function(h, local_path, remote_path) {
-  stopifnot(inherits(h, "viyar"), file.exists(local_path), nzchar(remote_path))
+  stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), file.exists(local_path), nzchar(remote_path))
   .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                       .viya_fs_escape(remote_path), "/content")) |>
     httr2::req_method("PUT") |>
@@ -95,7 +103,7 @@ viya_fs_upload <- function(h, local_path, remote_path) {
 #' }
 #' @export
 viya_fs_download <- function(h, remote_path, local_path) {
-  stopifnot(inherits(h, "viyar"), nzchar(remote_path))
+  stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(remote_path))
   .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                       .viya_fs_escape(remote_path), "/content")) |>
     httr2::req_perform() |> httr2::resp_body_raw() |>
@@ -115,13 +123,13 @@ viya_fs_download <- function(h, remote_path, local_path) {
 #' }
 #' @export
 viya_fs_list <- function(h, path) {
-  stopifnot(inherits(h, "viyar"), nzchar(path))
+  stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(path))
   r <- .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                            .viya_fs_escape(path), "/members?limit=500")) |>
     httr2::req_perform() |> httr2::resp_body_json()
   data.frame(
     name = vapply(r$items, `[[`, "", "name"),
     isDirectory = vapply(r$items, `[[`, logical(1), "isDirectory"),
-    size = vapply(r$items, function(x) x$size %||% NA_real_, numeric(1)),
+    size = vapply(r$items, function(x) x[["size"]] %||% NA_real_, numeric(1)),
     path = vapply(r$items, `[[`, "", "path"))
 }

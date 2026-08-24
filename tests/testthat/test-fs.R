@@ -1,8 +1,40 @@
-test_that(".viya_fs_escape joins path segments with ~fs~, stripping leading/trailing/double slashes", {
+test_that(".viya_fs_escape joins path segments with ~fs~, stripping trailing/double slashes, preserving a leading slash as a ~fs~ prefix", {
   expect_equal(.viya_fs_escape("a/b/c"), "a~fs~b~fs~c")
-  expect_equal(.viya_fs_escape("/a/b/"), "a~fs~b")
+  expect_equal(.viya_fs_escape("/a/b/"), "~fs~a~fs~b")
   expect_equal(.viya_fs_escape("a"), "a")
   expect_equal(.viya_fs_escape("."), ".")
+})
+
+test_that(".viya_fs_escape preserves a leading slash as a distinct ~fs~ prefix (absolute vs relative)", {
+  expect_equal(.viya_fs_escape("/tmp"), "~fs~tmp")
+  expect_equal(.viya_fs_escape("tmp"), "tmp")
+  expect_equal(.viya_fs_escape("/"), "~fs~")
+  expect_equal(.viya_fs_escape("/a/b/c"), "~fs~a~fs~b~fs~c")
+})
+
+test_that("viya_fs_mkdir creates an absolute path from root, not relative to cwd", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_tmp_ok  <- httr2::response_json(status = 200, body = list(isDirectory = TRUE, name = "tmp"))
+  resp_a_404   <- httr2::response(status = 404)
+  resp_a_made  <- httr2::response_json(status = 201, body = list(isDirectory = TRUE, name = "a"))
+
+  seq <- list(resp_tmp_ok, resp_a_404, resp_a_made)
+  i <- 0
+  seen_urls <- character(0)
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    seen_urls[i] <<- req$url
+    seq[[i]]
+  })
+
+  out <- viya_fs_mkdir(h, "/tmp/a")
+  expect_equal(out, "/tmp/a")
+  expect_equal(i, 3)
+  expect_match(seen_urls[1], "/files/~fs~tmp$")
+  expect_match(seen_urls[2], "/files/~fs~tmp~fs~a$")
+  expect_match(seen_urls[3], "/files/~fs~tmp$")  # create 'a' under root-anchored parent 'tmp'
 })
 
 test_that("viya_fs_mkdir creates missing intermediate directories one level at a time", {
@@ -58,6 +90,12 @@ test_that("viya_fs_mkdir validates its arguments", {
   h <- structure(list(token = "t", session = "sess1", context = "ctx",
                       base = "https://viya.example.com"), class = "viyar")
   expect_error(viya_fs_mkdir(h, ""))
+})
+
+test_that("viya_fs_mkdir requires an active compute session", {
+  h_no_session <- structure(list(token = "t", context = "ctx",
+                                 base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_fs_mkdir(h_no_session, "a/b"))
 })
 
 test_that("viya_fs_upload PUTs raw file content to the escaped remote path", {
