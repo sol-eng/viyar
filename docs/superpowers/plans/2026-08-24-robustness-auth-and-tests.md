@@ -1534,8 +1534,11 @@ test_that("viya_write then viya_read round-trips a data.frame", {
   viya_write(h, df, "WORK", "VIYAR_TEST_RT")
   back <- viya_read(h, "WORK", "VIYAR_TEST_RT")
 
+  # PROC IMPORT preserves the staged CSV header's exact case (`id`, `val`)
+  # rather than uppercasing it -- confirmed live against the soleng
+  # cluster, not assumed.
   expect_equal(nrow(back), 3)
-  expect_equal(sort(back$ID), 1:3)
+  expect_equal(sort(back$id), 1:3)
 })
 
 test_that("viya_upload then viya_download round-trips a file", {
