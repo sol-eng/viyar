@@ -1,6 +1,7 @@
 .pkce_verifier <- function() {
-  alphabet <- c(letters, LETTERS, 0:9, "-", ".", "_", "~")
-  paste0(sample(alphabet, 64, replace = TRUE), collapse = "")
+  raw <- openssl::rand_bytes(32)
+  b64 <- openssl::base64_encode(raw)
+  chartr("+/", "-_", sub("=+$", "", b64))
 }
 
 .pkce_challenge <- function(verifier) {
