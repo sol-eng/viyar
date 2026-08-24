@@ -36,6 +36,23 @@ test_that(".viya_req falls back to the default httr2 message for non-JSON errors
   expect_match(conditionMessage(err), "HTTP 500")
 })
 
+test_that(".viya_req surfaces the error message for a vendor +json content type", {
+  # SAS Viya REST services commonly return application/vnd.sas.error+json
+  # rather than bare application/json.
+  resp <- httr2::response(
+    status = 400,
+    headers = list("Content-Type" = "application/vnd.sas.error+json"),
+    body = charToRaw(as.character(jsonlite::toJSON(
+      list(message = "Invalid caslib name.", remediation = "Use viya_caslib_tables() to list valid names."),
+      auto_unbox = TRUE))))
+  httr2::local_mocked_responses(list(resp))
+  h <- list(token = "t", base = "https://viya.example.com")
+  err <- tryCatch(.viya_req(h, "/x") |> httr2::req_perform(), error = function(e) e)
+  expect_s3_class(err, "error")
+  expect_match(conditionMessage(err), "Invalid caslib name", fixed = TRUE)
+  expect_match(conditionMessage(err), "Use viya_caslib_tables", fixed = TRUE)
+})
+
 test_that("viya_reachable() verifies TLS by default", {
   expect_false(isTRUE(formals(viya_reachable)$insecure))
 })

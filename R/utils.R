@@ -5,8 +5,6 @@
 }
 
 .viya_error_body <- function(resp) {
-  ct <- httr2::resp_content_type(resp)
-  if (!identical(ct, "application/json")) return(NULL)
   body <- tryCatch(httr2::resp_body_json(resp), error = function(e) NULL)
   if (is.null(body)) return(NULL)
   msg <- body$message %||% body$error_description %||% body$error %||% NULL
