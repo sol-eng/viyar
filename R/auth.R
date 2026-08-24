@@ -4,6 +4,20 @@
   sub("/SASLogon/.*$", "", src)
 }
 
+.viya_no_url_error <- function() {
+  msg <- "No Viya URL configured. viya_config(url = ...) or set VIYA_URL."
+  if (requireNamespace("rstudioapi", quietly = TRUE) &&
+      !isTRUE(rstudioapi::isAvailable(child_ok = TRUE))) {
+    msg <- paste0(msg, " Note: rstudioapi reports this process isn't ",
+                  "connected to a Workbench IDE session -- this happens in ",
+                  "a fully detached process (e.g. `quarto render`/`Rscript` ",
+                  "run from a plain terminal, outside any IDE). Set ",
+                  "VIYA_URL, or call viya_config(url = ...) explicitly, ",
+                  "in that case.")
+  }
+  msg
+}
+
 #' Get or set viyar configuration
 #'
 #' Configuration is resolved from R options first, then environment
@@ -37,7 +51,7 @@ viya_config <- function(...) {
                                          unset = "^sas-viya$"))
   url <- getOption("viyar.url", Sys.getenv("VIYA_URL", unset = ""))
   if (!nzchar(url) && requireNamespace("rstudioapi", quietly = TRUE) &&
-      isTRUE(rstudioapi::isAvailable())) {
+      isTRUE(rstudioapi::isAvailable(child_ok = TRUE))) {
     int <- tryCatch(rstudioapi::findOAuthIntegration(name = wb_integration),
                     error = function(e) NULL)
     if (!is.null(int)) url <- .viya_url_from_integration(int) %||% ""
@@ -88,13 +102,23 @@ viya_token <- function(refresh = FALSE) {
   }
 
   if (requireNamespace("rstudioapi", quietly = TRUE) &&
-      isTRUE(rstudioapi::isAvailable())) {
+      isTRUE(rstudioapi::isAvailable(child_ok = TRUE))) {
     # isAvailable() is TRUE in any RStudio-family frontend (Desktop,
     # Server, Positron) -- not just Workbench. findOAuthIntegration()
     # itself asserts a genuine Workbench session and throws otherwise, so
     # both calls are wrapped in tryCatch to fall through to the next
     # resolution step (rather than error) on plain RStudio Desktop or a
     # local Positron session with no Workbench attached.
+    #
+    # child_ok = TRUE: found live that quarto render (and a notebook's own
+    # execution kernel) run this code in a *child* process, where
+    # isAvailable() defaults to FALSE even though the parent IDE session
+    # is genuinely Workbench-connected. child_ok = TRUE asks rstudioapi to
+    # relay the call back to that parent session instead of reporting
+    # unavailable outright -- this only helps when the child process is a
+    # real RStudio/Positron Job with a live RPC channel to the parent; a
+    # fully detached process (e.g. `quarto render` from a plain terminal,
+    # outside any IDE) still has nothing to relay to and stays FALSE.
     int <- tryCatch(
       rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration),
       error = function(e) NULL)

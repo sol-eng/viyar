@@ -140,3 +140,67 @@ test_that("viya_config() prefers an explicitly configured URL over auto-detectio
   viya_config(url = "https://explicit.example.com")
   expect_equal(viya_config()$url, "https://explicit.example.com")
 })
+
+test_that(".viya_no_url_error() adds a render-mode hint when rstudioapi is not connected", {
+  # Found live: quarto render / Rscript run in a separate R process with no
+  # Workbench IDE connection, so rstudioapi::isAvailable() is FALSE there
+  # even though the same code works fine in an interactive session or cell.
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_match(.viya_no_url_error(), "quarto render")
+  expect_match(.viya_no_url_error(), "No Viya URL configured")
+})
+
+test_that(".viya_no_url_error() omits the render-mode hint when rstudioapi is connected", {
+  testthat::local_mocked_bindings(isAvailable = function(...) TRUE,
+                                  .package = "rstudioapi")
+  expect_no_match(.viya_no_url_error(), "quarto render")
+  expect_match(.viya_no_url_error(), "No Viya URL configured")
+})
+
+test_that("viya_session() surfaces the render-mode hint when no URL is configured", {
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_error(viya_session(token = "t"), "quarto render")
+})
+
+test_that("viya_login() surfaces the render-mode hint when no URL is configured", {
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_error(viya_login(), "quarto render")
+})
+
+test_that("viya_config() calls isAvailable() with child_ok = TRUE", {
+  # Found live: isAvailable() defaults to FALSE inside a child process
+  # (an RStudio/Positron background Job, or the process quarto render
+  # knits a document in) even when the parent IDE session is genuinely
+  # Workbench-connected. child_ok = TRUE relays the check to the parent
+  # instead of reporting unavailable outright -- every call site in
+  # viyar must pass it, or Workbench auto-detection silently breaks
+  # under any of those execution contexts.
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  seen_args <- NULL
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) { seen_args <<- list(...); FALSE },
+    .package = "rstudioapi")
+
+  viya_config()
+  expect_equal(seen_args, list(child_ok = TRUE))
+})
+
+test_that("viya_token() calls isAvailable() with child_ok = TRUE", {
+  withr::local_envvar(VIYA_TOKEN = "")
+  local_token_cache()
+  seen_args <- NULL
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) { seen_args <<- list(...); FALSE },
+    .package = "rstudioapi")
+
+  expect_error(viya_token(), "viya_login\\(\\)")
+  expect_equal(seen_args, list(child_ok = TRUE))
+})

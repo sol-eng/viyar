@@ -83,8 +83,7 @@ viya_login <- function(url = viya_config()$url,
                        client_id = "vscode-positron",
                        redirect_uri = "urn:ietf:wg:oauth:2.0:oob",
                        scope = "openid") {
-  if (!nzchar(url)) stop("No Viya URL configured. viya_config(url = ...) ",
-                         "or set VIYA_URL.")
+  if (!nzchar(url)) stop(.viya_no_url_error())
 
   verifier  <- .pkce_verifier()
   challenge <- .pkce_challenge(verifier)
