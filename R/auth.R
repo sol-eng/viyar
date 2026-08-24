@@ -44,15 +44,17 @@ viya_config <- function(...) {
 
 #' Obtain a Viya access token
 #'
-#' Resolution order: the `VIYA_TOKEN` environment variable if set;
-#' otherwise Posit Workbench managed OAuth credentials via `rstudioapi`
-#' (interactive Workbench sessions). On Posit Connect with viewer OAuth
+#' Resolution order: the `VIYA_TOKEN` environment variable if set; a
+#' still-fresh cached token from a previous call; Posit Workbench managed
+#' OAuth credentials via `rstudioapi` (interactive Workbench sessions);
+#' a cached SSO token from [viya_login()], refreshed silently if it's
+#' expired or about to expire. On Posit Connect with viewer OAuth
 #' integrations, obtain the token yourself (e.g.
 #' `connectapi::get_oauth_credentials()` with the viewer session token) and
 #' pass it to [viya_session()] via its `token` argument.
 #'
-#' @param refresh Force re-acquisition instead of returning the cached
-#'   token (Viya access tokens typically last around 10 hours).
+#' @param refresh Force re-acquisition instead of returning a still-fresh
+#'   cached token (Viya access tokens typically last around 10 hours).
 #' @return An OAuth access token (character scalar).
 #' @examples
 #' \dontrun{
@@ -60,19 +62,38 @@ viya_config <- function(...) {
 #' }
 #' @export
 viya_token <- function(refresh = FALSE) {
-  if (!refresh && !is.null(.token_cache$tok)) return(.token_cache$tok)
   tok <- Sys.getenv("VIYA_TOKEN", unset = "")
-  if (!nzchar(tok)) {
-    if (!requireNamespace("rstudioapi", quietly = TRUE))
-      stop("No VIYA_TOKEN env var and rstudioapi not available. ",
-           "Provide a token explicitly.")
-    int <- rstudioapi::findOAuthIntegration(
-      name = viya_config()$wb_integration)
-    if (is.null(int))
-      stop("No OAuth integration matching '",
-           viya_config()$wb_integration, "' found in Workbench.")
-    tok <- rstudioapi::getOAuthCredentials(audience = int$guid)$access_token
+  if (nzchar(tok)) return(tok)
+
+  if (!refresh && !is.null(.token_cache$tok) &&
+      (is.null(.token_cache$exp) || is.na(.token_cache$exp) ||
+       .token_cache$exp > Sys.time() + 60)) {
+    return(.token_cache$tok)
   }
-  .token_cache$tok <- tok
-  tok
+
+  if (requireNamespace("rstudioapi", quietly = TRUE) &&
+      isTRUE(rstudioapi::isAvailable())) {
+    int <- rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration)
+    if (!is.null(int)) {
+      tok <- rstudioapi::getOAuthCredentials(audience = int$guid)$access_token
+      .token_cache$tok <- tok
+      .token_cache$refresh <- NULL
+      .token_cache$exp <- .jwt_exp(tok)
+      return(tok)
+    }
+  }
+
+  if (!is.null(.token_cache$refresh)) {
+    resp <- tryCatch(
+      .viya_token_exchange(viya_config()$url, list(
+        grant_type = "refresh_token",
+        client_id = .token_cache$client_id,
+        refresh_token = .token_cache$refresh)),
+      error = function(e) NULL)
+    if (!is.null(resp)) return(.viya_cache_token(resp, .token_cache$client_id))
+  }
+
+  stop("No Viya token available. Set VIYA_TOKEN, run inside Posit Workbench ",
+       "with a matching OAuth integration, or call viya_login() to ",
+       "authenticate interactively.")
 }
