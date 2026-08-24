@@ -37,13 +37,25 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
 - `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
   dataset, via the Compute data service and a CSV-staging `PROC IMPORT`).
-- `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`
-  (SAS Content: the Files/Folders service).
+- `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`/
+  `viya_delete_file()`/`viya_delete_folder()` (SAS Content: the
+  Files/Folders service). Both deletes resolve the target to its
+  resource `id`/`uri` first (via `.viya_folder()` or a folder's
+  `members` listing), then `DELETE` by that id -- no `ETag`/`If-Match`
+  needed here (unlike `R/fs.R` below). `viya_delete_folder()` always
+  sends `?recursive=true` (a no-op for an empty folder, required for a
+  non-empty one) rather than branching on emptiness.
 - `R/fs.R` — `viya_fs_mkdir()`/`viya_fs_upload()`/`viya_fs_download()`/
-  `viya_fs_list()`: a second, distinct storage system -- the real OS
-  filesystem a compute session sees (home directory, NFS-mounted shared
-  paths, etc.), via the Compute service's own "File System" REST
-  resource. `.viya_fs_escape()` joins path segments with the literal
+  `viya_fs_list()`/`viya_fs_delete()`: a second, distinct storage system
+  -- the real OS filesystem a compute session sees (home directory,
+  NFS-mounted shared paths, etc.), via the Compute service's own "File
+  System" REST resource. `viya_fs_delete()` deletes both files and
+  non-empty directories through the same call (no recursive flag), but
+  unlike the SAS Content deletes above, this API requires an `If-Match`
+  header carrying the resource's current `ETag` -- so it does a `GET`
+  first to read the `ETag` off the response headers, then `DELETE`s with
+  it; omitting `If-Match` gets a `428 Precondition Required`.
+  `.viya_fs_escape()` joins path segments with the literal
   `~fs~` (SAS's own escaping convention, confirmed empirically, not
   documented in prose form anywhere) and then URL-encodes the result
   (`~` survives encoding untouched; a genuinely critical detail --
@@ -185,3 +197,17 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
     `Content-Type` header (only `Content-Disposition`); SAS's docs say
     each file needs "a specified name and content type" — unverified
     whether this causes wrong stored MIME types in practice.
+- `viya_fs_delete()`'s two-request GET-then-DELETE is not atomic: if the
+  resource is deleted or modified by something else between the two
+  calls, the `ETag` from the `GET` will be stale and the `DELETE` will
+  (correctly) fail rather than delete the wrong version — this is the
+  API's own optimistic-concurrency design, not a `viyar` bug, but worth
+  knowing if a delete call intermittently 412/428s under concurrent
+  access to the same path. Also: `viya_delete_file()`/
+  `viya_delete_folder()` (SAS Content) were designed and mocked-tested
+  against documented/previously-confirmed behavior only — this PR had no
+  live cluster access, so double-deleting an already-gone resource,
+  deleting a folder mid-populate, and the exact `viya_fs_delete()`
+  `ETag` format on a real cluster are all unverified beyond the mocked
+  tests; `test-live-fs.R`/`test-live-files.R` are written and ready for
+  whoever runs the live tier next.

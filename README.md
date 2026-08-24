@@ -52,24 +52,28 @@ viya_end(h)
 Two separate storage systems, two separate function families:
 
 - **SAS Content** (the Files/Folders app in Viya): `viya_create_folder()`,
-  `viya_upload()`, `viya_download()`.
+  `viya_upload()`, `viya_download()`, `viya_delete_file()`,
+  `viya_delete_folder()`.
 - **The compute session's own filesystem** (a home directory, an
   NFS-mounted shared path, or anything else the session process can see
   on disk): `viya_fs_mkdir()`, `viya_fs_upload()`, `viya_fs_download()`,
-  `viya_fs_list()`. These need an active compute session (`h`) and
-  operate on that session's real filesystem, not the Files/Folders app.
-  Note that a path can be readable without being writable (e.g. an
-  NFS-mounted home directory with restrictive permissions) — `/tmp` is a
-  reliable writable scratch location if you hit unexpected 404s on
-  `viya_fs_mkdir()`/`viya_fs_upload()`.
+  `viya_fs_list()`, `viya_fs_delete()`. These need an active compute
+  session (`h`) and operate on that session's real filesystem, not the
+  Files/Folders app. Note that a path can be readable without being
+  writable (e.g. an NFS-mounted home directory with restrictive
+  permissions) — `/tmp` is a reliable writable scratch location if you
+  hit unexpected 404s on `viya_fs_mkdir()`/`viya_fs_upload()`.
 
 ```r
 viya_create_folder(h, "/Public/Reports/2026")
 viya_upload(h, "report.html", "/Public/Reports/2026")
+viya_delete_file(h, "/Public/Reports/2026/report.html")
+viya_delete_folder(h, "/Public/Reports/2026")
 
 viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
 viya_fs_upload(h, "report.html", "/gel/homes/samiul/reports/2026/report.html")
 viya_fs_list(h, "/gel/homes/samiul/reports/2026")
+viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
 ```
 
 ## Authenticating to SAS Viya
