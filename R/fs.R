@@ -103,3 +103,25 @@ viya_fs_download <- function(h, remote_path, local_path) {
   message("downloaded ", remote_path, " -> ", local_path)
   invisible(local_path)
 }
+
+#' List a directory's contents on a compute session's filesystem
+#'
+#' @param h A `viyar` handle from [viya_session()].
+#' @param path Directory path on the session's filesystem.
+#' @return A data frame with columns `name`, `isDirectory`, `size`, `path`.
+#' @examples
+#' \dontrun{
+#' viya_fs_list(h, "/gel/homes/samiul")
+#' }
+#' @export
+viya_fs_list <- function(h, path) {
+  stopifnot(inherits(h, "viyar"), nzchar(path))
+  r <- .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
+                           .viya_fs_escape(path), "/members?limit=500")) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  data.frame(
+    name = vapply(r$items, `[[`, "", "name"),
+    isDirectory = vapply(r$items, `[[`, logical(1), "isDirectory"),
+    size = vapply(r$items, function(x) x$size %||% NA_real_, numeric(1)),
+    path = vapply(r$items, `[[`, "", "path"))
+}

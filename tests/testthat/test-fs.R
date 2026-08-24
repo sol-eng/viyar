@@ -95,3 +95,21 @@ test_that("viya_fs_download GETs raw content and writes it to local_path", {
   expect_equal(readLines(local_path), "download test content")
   expect_match(seen$url, "/files/a~fs~b~fs~hello.txt/content$")
 })
+
+test_that("viya_fs_list returns a data frame of directory members", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  resp <- httr2::response_json(status = 200, body = list(items = list(
+    list(name = "b", isDirectory = TRUE, size = 15,
+         path = "/gel/homes/samiul/a"),
+    list(name = "hello.txt", isDirectory = FALSE, size = 26,
+         path = "/gel/homes/samiul/a"))))
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) { seen <<- req; resp })
+
+  out <- viya_fs_list(h, "a")
+  expect_equal(names(out), c("name", "isDirectory", "size", "path"))
+  expect_equal(out$name, c("b", "hello.txt"))
+  expect_equal(out$isDirectory, c(TRUE, FALSE))
+  expect_match(seen$url, "/files/a/members\\?limit=500$")
+})
