@@ -151,3 +151,21 @@ test_that("viya_fs_list returns a data frame of directory members", {
   expect_equal(out$isDirectory, c(TRUE, FALSE))
   expect_match(seen$url, "/files/a/members\\?limit=500$")
 })
+
+test_that("viya_fs_list(h, \".\") lists the session's cwd without curl collapsing the ./ segment", {
+  # Found live: httr2/curl normalize away a literal "/./ " in a URL by
+  # default (RFC 3986 dot-segment removal), so ".../files/./members"
+  # silently became ".../files/members" -- the server then read "members"
+  # itself as the {path} parameter and 404'd. path_as_is = TRUE disables
+  # that normalization so a literal "." reaches the server as intended.
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  resp <- httr2::response_json(status = 200, body = list(items = list()))
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) { seen <<- req; resp })
+
+  out <- viya_fs_list(h, ".")
+  expect_equal(nrow(out), 0)
+  expect_match(seen$url, "/files/\\./members\\?limit=500$")
+  expect_true(isTRUE(seen$options$path_as_is))
+})

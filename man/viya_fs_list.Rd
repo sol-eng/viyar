@@ -9,7 +9,8 @@ viya_fs_list(h, path)
 \arguments{
 \item{h}{A `viyar` handle from [viya_session()].}
 
-\item{path}{Directory path on the session's filesystem.}
+\item{path}{Directory path on the session's filesystem. Pass `"."` to
+list the session's current working directory.}
 }
 \value{
 A data frame with columns `name`, `isDirectory`, `size`, `path`.
@@ -20,5 +21,6 @@ List a directory's contents on a compute session's filesystem
 \examples{
 \dontrun{
 viya_fs_list(h, "/gel/homes/samiul")
+viya_fs_list(h, ".")  # what's in the session's working directory
 }
 }

@@ -9,6 +9,7 @@
   tryCatch({
     .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                         .viya_fs_escape(path))) |>
+      httr2::req_options(path_as_is = TRUE) |>
       httr2::req_perform()
     TRUE
   }, error = function(e) FALSE)
@@ -54,6 +55,7 @@ viya_fs_mkdir <- function(h, path) {
       }
       .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                           .viya_fs_escape(parent))) |>
+        httr2::req_options(path_as_is = TRUE) |>
         httr2::req_method("POST") |>
         httr2::req_body_json(list(name = segments[i], isDirectory = TRUE)) |>
         httr2::req_perform()
@@ -82,6 +84,7 @@ viya_fs_upload <- function(h, local_path, remote_path) {
   stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), file.exists(local_path), nzchar(remote_path))
   .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                       .viya_fs_escape(remote_path), "/content")) |>
+    httr2::req_options(path_as_is = TRUE) |>
     httr2::req_method("PUT") |>
     httr2::req_headers(`Content-Type` = "application/octet-stream") |>
     httr2::req_body_file(local_path) |>
@@ -106,6 +109,7 @@ viya_fs_download <- function(h, remote_path, local_path) {
   stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(remote_path))
   .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                       .viya_fs_escape(remote_path), "/content")) |>
+    httr2::req_options(path_as_is = TRUE) |>
     httr2::req_perform() |> httr2::resp_body_raw() |>
     writeBin(local_path)
   message("downloaded ", remote_path, " -> ", local_path)
@@ -115,17 +119,20 @@ viya_fs_download <- function(h, remote_path, local_path) {
 #' List a directory's contents on a compute session's filesystem
 #'
 #' @param h A `viyar` handle from [viya_session()].
-#' @param path Directory path on the session's filesystem.
+#' @param path Directory path on the session's filesystem. Pass `"."` to
+#'   list the session's current working directory.
 #' @return A data frame with columns `name`, `isDirectory`, `size`, `path`.
 #' @examples
 #' \dontrun{
 #' viya_fs_list(h, "/gel/homes/samiul")
+#' viya_fs_list(h, ".")  # what's in the session's working directory
 #' }
 #' @export
 viya_fs_list <- function(h, path) {
   stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(path))
   r <- .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
                            .viya_fs_escape(path), "/members?limit=500")) |>
+    httr2::req_options(path_as_is = TRUE) |>
     httr2::req_perform() |> httr2::resp_body_json()
   data.frame(
     name = vapply(r$items, `[[`, "", "name"),
