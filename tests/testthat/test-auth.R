@@ -111,6 +111,7 @@ test_that("viya_config() auto-detects the URL from Workbench when unset", {
 
 test_that("viya_config() prefers an explicitly configured URL over auto-detection", {
   withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
   testthat::local_mocked_bindings(
     isAvailable = function(...) TRUE,
     findOAuthIntegration = function(...) list(
@@ -119,5 +120,4 @@ test_that("viya_config() prefers an explicitly configured URL over auto-detectio
 
   viya_config(url = "https://explicit.example.com")
   expect_equal(viya_config()$url, "https://explicit.example.com")
-  withr::local_options(viyar.url = NULL)
 })
