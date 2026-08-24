@@ -32,3 +32,19 @@
     stop("No code parameter found in the pasted URL.")
   utils::URLdecode(code)
 }
+
+.viya_token_exchange <- function(url, body) {
+  httr2::request(paste0(url, "/SASLogon/oauth/token")) |>
+    httr2::req_headers(Accept = "application/json") |>
+    (\(req) do.call(httr2::req_body_form, c(list(req), body)))() |>
+    httr2::req_error(body = .viya_error_body) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+}
+
+.viya_cache_token <- function(resp, client_id) {
+  .token_cache$tok <- resp$access_token
+  .token_cache$refresh <- resp$refresh_token
+  .token_cache$exp <- .jwt_exp(resp$access_token)
+  .token_cache$client_id <- client_id
+  invisible(resp$access_token)
+}
