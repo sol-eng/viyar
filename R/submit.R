@@ -85,6 +85,7 @@ viya_datasets <- function(h, libref) {
 #'   count.
 #' @export
 viya_members <- function(h, libref) {
+  stopifnot(inherits(h, "viyar"), nzchar(libref))
   code <- sprintf(paste0(
     "proc sql;\n  create table WORK._VIYAR_MEMBERS as\n",
     "  select memname, memtype, nobs from dictionary.tables\n",

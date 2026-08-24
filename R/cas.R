@@ -10,6 +10,7 @@
 #' @export
 viya_caslib_files <- function(h, caslib,
                               cas_server = viya_config()$cas_server) {
+  stopifnot(inherits(h, "viyar"), nzchar(caslib))
   r <- .viya_req(h, paste0("/casManagement/servers/", cas_server,
                            "/caslibs/", utils::URLencode(caslib),
                            "/sources?limit=500")) |>
@@ -29,6 +30,7 @@ viya_caslib_files <- function(h, caslib,
 #' @export
 viya_caslib_tables <- function(h, caslib,
                                cas_server = viya_config()$cas_server) {
+  stopifnot(inherits(h, "viyar"), nzchar(caslib))
   r <- .viya_req(h, paste0("/casManagement/servers/", cas_server,
                            "/caslibs/", utils::URLencode(caslib),
                            "/tables?limit=500")) |>
@@ -65,6 +67,7 @@ viya_caslib_tables <- function(h, caslib,
 viya_load_table <- function(h, caslib, file,
                             casout = toupper(sub("\\.[^.]+$", "", file)),
                             promote = TRUE, replace = FALSE) {
+  stopifnot(inherits(h, "viyar"), nzchar(caslib), nzchar(file))
   opt <- if (replace) "replace" else if (promote) "promote" else ""
   code <- sprintf(paste0(
     "%%macro _viyar_cas; ",
@@ -93,6 +96,7 @@ viya_load_table <- function(h, caslib, file,
 #' @export
 viya_unload_table <- function(h, caslib, table,
                               cas_server = viya_config()$cas_server) {
+  stopifnot(inherits(h, "viyar"), nzchar(caslib), nzchar(table))
   invisible(.viya_req(h, paste0("/casManagement/servers/", cas_server,
                                 "/caslibs/", utils::URLencode(caslib),
                                 "/tables/",
