@@ -789,6 +789,22 @@ test_that("Workbench managed OAuth is tried when rstudioapi reports available", 
   expect_equal(.token_cache$tok, tok)
 })
 
+test_that("a non-Workbench RStudio/Positron session falls through instead of erroring", {
+  # isAvailable() is TRUE outside Workbench too (plain RStudio Desktop, a
+  # local Positron session); findOAuthIntegration() itself asserts a real
+  # Workbench session and throws otherwise -- viya_token() must catch that
+  # and fall through to its next resolution step, not propagate the error.
+  withr::local_envvar(VIYA_TOKEN = "")
+  reset_token_cache()
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) TRUE,
+    findOAuthIntegration = function(...)
+      stop("assertWorkbenchSession(): only available within Posit Workbench sessions"),
+    .package = "rstudioapi")
+
+  expect_error(viya_token(), "viya_login\\(\\)")
+})
+
 test_that("a clear error is thrown when nothing is available", {
   withr::local_envvar(VIYA_TOKEN = "")
   reset_token_cache()
@@ -856,13 +872,25 @@ viya_token <- function(refresh = FALSE) {
 
   if (requireNamespace("rstudioapi", quietly = TRUE) &&
       isTRUE(rstudioapi::isAvailable())) {
-    int <- rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration)
+    # isAvailable() is TRUE in any RStudio-family frontend (Desktop,
+    # Server, Positron) -- not just Workbench. findOAuthIntegration()
+    # itself asserts a genuine Workbench session and throws otherwise, so
+    # both calls are wrapped in tryCatch to fall through to the next
+    # resolution step (rather than error) on plain RStudio Desktop or a
+    # local Positron session with no Workbench attached.
+    int <- tryCatch(
+      rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration),
+      error = function(e) NULL)
     if (!is.null(int)) {
-      tok <- rstudioapi::getOAuthCredentials(audience = int$guid)$access_token
-      .token_cache$tok <- tok
-      .token_cache$refresh <- NULL
-      .token_cache$exp <- .jwt_exp(tok)
-      return(tok)
+      tok <- tryCatch(
+        rstudioapi::getOAuthCredentials(audience = int$guid)$access_token,
+        error = function(e) NULL)
+      if (!is.null(tok)) {
+        .token_cache$tok <- tok
+        .token_cache$refresh <- NULL
+        .token_cache$exp <- .jwt_exp(tok)
+        return(tok)
+      }
     }
   }
 
@@ -885,7 +913,7 @@ viya_token <- function(refresh = FALSE) {
 - [ ] **Step 4: Run to verify pass**
 
 Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
-Expected: PASS (23 tests, 0 failures).
+Expected: PASS (24 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -1032,7 +1060,7 @@ viya_config <- function(...) {
 - [ ] **Step 4: Run to verify pass**
 
 Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
-Expected: PASS (26 tests, 0 failures).
+Expected: PASS (27 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
@@ -1165,7 +1193,7 @@ every other line of each function is unchanged.)
 - [ ] **Step 4: Run to verify pass**
 
 Run: `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
-Expected: PASS (29 tests, 0 failures).
+Expected: PASS (30 tests, 0 failures).
 
 - [ ] **Step 5: Commit**
 
