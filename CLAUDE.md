@@ -43,12 +43,17 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `viya_fs_list()`: a second, distinct storage system -- the real OS
   filesystem a compute session sees (home directory, NFS-mounted shared
   paths, etc.), via the Compute service's own "File System" REST
-  resource. Every path segment embedded in a URL for these calls has each
-  `/` replaced with the literal `~fs~` (SAS's own escaping convention,
-  confirmed empirically, not documented in prose form anywhere). Neither
-  this API nor the Folders API supports recursive/nested creation --
-  `viya_create_folder()`/`viya_fs_mkdir()` both walk the path themselves,
-  creating one missing segment at a time.
+  resource. `.viya_fs_escape()` joins path segments with the literal
+  `~fs~` (SAS's own escaping convention, confirmed empirically, not
+  documented in prose form anywhere) and then URL-encodes the result
+  (`~` survives encoding untouched; a genuinely critical detail --
+  **a leading `/` must become a leading `~fs~` too**, since that's what
+  distinguishes an absolute path from one resolved against the session's
+  cwd. Losing that distinction was a real bug caught only in a final
+  review: every absolute-path example silently became cwd-relative
+  instead of erroring). Neither this API nor the Folders API supports
+  recursive/nested creation -- `viya_create_folder()`/`viya_fs_mkdir()`
+  both walk the path themselves, creating one missing segment at a time.
 
 ## The `viyar` S3 handle
 
