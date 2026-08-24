@@ -25,11 +25,9 @@ test_that("viya_upload then viya_download round-trips a file", {
   fname <- paste0("viyar_live_test_", as.integer(Sys.time()), ".txt")
   tmp_up <- tempfile(fileext = ".txt")
   writeLines("viyar live test", tmp_up)
-  up <- viya_upload(h, tmp_up, "/Public", name = fname)
-  on.exit(tryCatch(
-    .viya_req(h, paste0("/files/files/", up$id)) |>
-      httr2::req_method("DELETE") |> httr2::req_perform(),
-    error = function(e) NULL), add = TRUE)
+  viya_upload(h, tmp_up, "/Public", name = fname)
+  on.exit(tryCatch(viya_delete_file(h, paste0("/Public/", fname)),
+                   error = function(e) NULL), add = TRUE)
 
   tmp_down <- tempfile(fileext = ".txt")
   viya_download(h, paste0("/Public/", fname), tmp_down)

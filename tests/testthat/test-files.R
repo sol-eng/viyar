@@ -48,3 +48,81 @@ test_that("viya_create_folder validates its arguments", {
                       base = "https://viya.example.com"), class = "viyar")
   expect_error(viya_create_folder(h, ""))
 })
+
+test_that("viya_delete_file resolves the file by name then DELETEs its uri", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_folder <- httr2::response_json(status = 200, body = list(id = "public-id", name = "Public"))
+  resp_members <- httr2::response_json(status = 200, body = list(items = list(
+    list(name = "report.html", uri = "/files/files/report-id"))))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_folder, resp_members, resp_delete)
+  i <- 0
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    if (i == 3) seen <<- req
+    seq[[i]]
+  })
+
+  out <- viya_delete_file(h, "/Public/report.html")
+  expect_null(out)
+  expect_equal(i, 3)
+  expect_match(seen$url, "/files/files/report-id$")
+  expect_equal(seen$method, "DELETE")
+})
+
+test_that("viya_delete_file errors when the file isn't found in the folder", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_folder <- httr2::response_json(status = 200, body = list(id = "public-id", name = "Public"))
+  resp_members <- httr2::response_json(status = 200, body = list(items = list()))
+
+  seq <- list(resp_folder, resp_members)
+  i <- 0
+  httr2::local_mocked_responses(function(req) { i <<- i + 1; seq[[i]] })
+
+  expect_error(viya_delete_file(h, "/Public/missing.html"), "not found")
+})
+
+test_that("viya_delete_file validates its arguments", {
+  bad_h <- list(token = "t", base = "https://viya.example.com")
+  expect_error(viya_delete_file(bad_h, "/Public/x.html"))
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_delete_file(h, ""))
+})
+
+test_that("viya_delete_folder resolves the folder then DELETEs it with recursive=true", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_folder <- httr2::response_json(status = 200, body = list(id = "reports-id", name = "Reports"))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_folder, resp_delete)
+  i <- 0
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    if (i == 2) seen <<- req
+    seq[[i]]
+  })
+
+  out <- viya_delete_folder(h, "/Public/Reports")
+  expect_null(out)
+  expect_equal(i, 2)
+  expect_match(seen$url, "/folders/folders/reports-id\\?recursive=true$")
+  expect_equal(seen$method, "DELETE")
+})
+
+test_that("viya_delete_folder validates its arguments", {
+  bad_h <- list(token = "t", base = "https://viya.example.com")
+  expect_error(viya_delete_folder(bad_h, "/Public/Reports"))
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_delete_folder(h, ""))
+})
