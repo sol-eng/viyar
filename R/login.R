@@ -48,3 +48,62 @@
   .token_cache$client_id <- client_id
   invisible(resp$access_token)
 }
+
+#' Log in to Viya interactively via browser SSO
+#'
+#' For use outside Posit Workbench (e.g. a local desktop R session):
+#' opens a Viya login page in your browser using the OAuth authorization
+#' code flow with PKCE, then exchanges the code you paste back for an
+#' access token. The token (and refresh token, if issued) is cached and
+#' picked up automatically by [viya_token()] and [viya_session()] for the
+#' rest of the R session, refreshing itself silently as it nears expiry.
+#'
+#' @param url Viya base URL; defaults to the configured URL (see
+#'   [viya_config()]).
+#' @param client_id OAuth client id registered on the Viya server for
+#'   interactive/CLI logins.
+#' @param redirect_uri Optional redirect URI to send in the authorization
+#'   request. Leave `NULL` to let the server use its registered default
+#'   for `client_id`.
+#' @param scope OAuth scopes to request.
+#' @return The access token (character scalar), invisibly.
+#' @examples
+#' \dontrun{
+#' viya_login(url = "https://viya.example.com")
+#' h <- viya_session()
+#' }
+#' @export
+viya_login <- function(url = viya_config()$url,
+                       client_id = "vscode-positron",
+                       redirect_uri = NULL,
+                       scope = "openid") {
+  if (!nzchar(url)) stop("No Viya URL configured. viya_config(url = ...) ",
+                         "or set VIYA_URL.")
+
+  verifier  <- .pkce_verifier()
+  challenge <- .pkce_challenge(verifier)
+
+  q <- list(client_id = client_id, response_type = "code", scope = scope,
+            code_challenge = challenge, code_challenge_method = "S256")
+  if (!is.null(redirect_uri)) q$redirect_uri <- redirect_uri
+  authorize_url <- do.call(httr2::url_modify_query,
+                           c(list(paste0(url, "/SASLogon/oauth/authorize")), q))
+
+  message("Opening Viya login in your browser:\n", authorize_url)
+  tryCatch(utils::browseURL(authorize_url), error = function(e) NULL)
+
+  raw <- readline(
+    "After logging in, paste the authorization code (or the full redirect URL) here: ")
+  code <- .parse_auth_code(raw)
+
+  body <- list(grant_type = "authorization_code", client_id = client_id,
+               code = code, code_verifier = verifier)
+  if (!is.null(redirect_uri)) body$redirect_uri <- redirect_uri
+  resp <- .viya_token_exchange(url, body)
+  tok  <- .viya_cache_token(resp, client_id)
+  message("Viya login succeeded; token cached",
+          if (!is.na(.token_cache$exp))
+            paste0(" (expires ", format(.token_cache$exp, usetz = TRUE), ")")
+          else "", ".")
+  invisible(tok)
+}
