@@ -137,6 +137,22 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   filename collides with HTTP 409 on a second run against the same
   cluster (found live). `test-live-data.R`'s upload test uses a
   timestamped filename and deletes it via the Files API afterward.
+- `viya_fs_*` operates on whatever the compute session's OS process can
+  read/write — read access and write access are not the same thing, and
+  a path can have one without the other. Found live: a user's own
+  NFS-mounted home directory was listable (`viya_fs_list()` on its
+  parent) and passed SAS's own `fileexist()`, but both `viya_fs_mkdir()`
+  and SAS's own `dcreate()` failed identically trying to create anything
+  under it — confirming a real write-permission/mount restriction on
+  that specific deployment (NFS root-squash or a UID mismatch are the
+  usual causes), not a `viyar` or REST API bug. `/tmp` was confirmed
+  writable and to be the same filesystem view for both the REST API and
+  SAS code (a file uploaded via `viya_fs_upload()` was read back
+  correctly via a SAS `data _null_`/`infile` step) — useful as a
+  scratch/diagnostic location, but session-scoped, not guaranteed
+  persistent. If `viya_fs_mkdir()` 404s on a path that's confirmed to
+  exist, test write access directly with SAS's `dcreate()` before
+  assuming a code bug.
 - Do not assume or hardcode a Viya test cluster for future testing work
   (Workbench example scripts, a second live-test file, a follow-up PR) —
   ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`

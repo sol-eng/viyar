@@ -13,9 +13,23 @@ ViyaR addresses the missing piece in the R – SASViya integration:
 
 ## Quick start
 
+### Inside Posit Workbench
+
+If Workbench has a Viya OAuth integration configured, `viyar` auto-detects
+both the token and the Viya server URL — getting a session is one line,
+no `viya_config()` or login step needed:
+
+```r
+library(viyar)
+h <- viya_session()
+viya_librefs(h)
+```
+
+### Anywhere else (local desktop R, Posit Connect, CI)
+
 ```r
 viya_config(url = "https://your-viya-server.example.com")
-# token: VIYA_TOKEN env var, or Posit Workbench managed credentials (auto)
+# token: VIYA_TOKEN env var, or viya_login() for an interactive SSO login
 
 h <- viya_session()                    # compute session (retry/reachability aware)
 viya_librefs(h)
@@ -44,6 +58,10 @@ Two separate storage systems, two separate function families:
   on disk): `viya_fs_mkdir()`, `viya_fs_upload()`, `viya_fs_download()`,
   `viya_fs_list()`. These need an active compute session (`h`) and
   operate on that session's real filesystem, not the Files/Folders app.
+  Note that a path can be readable without being writable (e.g. an
+  NFS-mounted home directory with restrictive permissions) — `/tmp` is a
+  reliable writable scratch location if you hit unexpected 404s on
+  `viya_fs_mkdir()`/`viya_fs_upload()`.
 
 ```r
 viya_create_folder(h, "/Public/Reports/2026")
