@@ -39,8 +39,7 @@ viya_session <- function(context = viya_config()$context,
                          token = viya_token(),
                          url = viya_config()$url,
                          tries = 5, wait = 20) {
-  if (!nzchar(url)) stop("No Viya URL configured. viya_config(url = ...) ",
-                         "or set VIYA_URL.")
+  if (!nzchar(url)) stop(.viya_no_url_error())
   ctxs <- viya_contexts(token, url)
   hit  <- ctxs$id[ctxs$name == context]
   if (!length(hit)) stop("Context '", context, "' not found. Available:\n  ",

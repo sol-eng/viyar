@@ -4,6 +4,19 @@
   sub("/SASLogon/.*$", "", src)
 }
 
+.viya_no_url_error <- function() {
+  msg <- "No Viya URL configured. viya_config(url = ...) or set VIYA_URL."
+  if (requireNamespace("rstudioapi", quietly = TRUE) &&
+      !isTRUE(rstudioapi::isAvailable())) {
+    msg <- paste0(msg, " Note: Workbench auto-detection only works in an ",
+                  "interactive IDE-connected session -- it will not run ",
+                  "under `quarto render`/Rscript (a separate, detached R ",
+                  "process). Set VIYA_URL, or call viya_config(url = ...) ",
+                  "explicitly, before rendering non-interactively.")
+  }
+  msg
+}
+
 #' Get or set viyar configuration
 #'
 #' Configuration is resolved from R options first, then environment

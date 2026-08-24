@@ -140,3 +140,36 @@ test_that("viya_config() prefers an explicitly configured URL over auto-detectio
   viya_config(url = "https://explicit.example.com")
   expect_equal(viya_config()$url, "https://explicit.example.com")
 })
+
+test_that(".viya_no_url_error() adds a render-mode hint when rstudioapi is not connected", {
+  # Found live: quarto render / Rscript run in a separate R process with no
+  # Workbench IDE connection, so rstudioapi::isAvailable() is FALSE there
+  # even though the same code works fine in an interactive session or cell.
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_match(.viya_no_url_error(), "quarto render")
+  expect_match(.viya_no_url_error(), "No Viya URL configured")
+})
+
+test_that(".viya_no_url_error() omits the render-mode hint when rstudioapi is connected", {
+  testthat::local_mocked_bindings(isAvailable = function(...) TRUE,
+                                  .package = "rstudioapi")
+  expect_no_match(.viya_no_url_error(), "quarto render")
+  expect_match(.viya_no_url_error(), "No Viya URL configured")
+})
+
+test_that("viya_session() surfaces the render-mode hint when no URL is configured", {
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_error(viya_session(token = "t"), "quarto render")
+})
+
+test_that("viya_login() surfaces the render-mode hint when no URL is configured", {
+  withr::local_envvar(VIYA_URL = "")
+  withr::local_options(viyar.url = NULL)
+  testthat::local_mocked_bindings(isAvailable = function(...) FALSE,
+                                  .package = "rstudioapi")
+  expect_error(viya_login(), "quarto render")
+})

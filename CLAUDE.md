@@ -72,7 +72,15 @@ Resolution order in `viya_token()`:
 3. Posit Workbench managed OAuth via `rstudioapi`, when
    `rstudioapi::isAvailable()` is `TRUE` and a matching integration
    exists (name regex: `viya_config()$wb_integration`, default
-   `^sas-viya$`).
+   `^sas-viya$`). **`isAvailable()` requires a live IDE-connected R
+   process** — found live: `quarto render` (and plain `Rscript`) launch a
+   separate, detached R process to knit a document, so this auto-detection
+   silently doesn't run there even though the exact same code works when
+   run as an interactive cell or in the R console. `.viya_no_url_error()`
+   (in `R/auth.R`) detects this case (`rstudioapi` installed but not
+   connected) and appends a hint to the "No Viya URL configured" error
+   telling the user to set `VIYA_URL`/`viya_config(url = ...)` explicitly
+   before rendering non-interactively.
 4. A cached SSO token from `viya_login()`, refreshed via its
    `refresh_token` if expired.
 5. Otherwise: an error pointing at `viya_login()`/`VIYA_TOKEN`.
