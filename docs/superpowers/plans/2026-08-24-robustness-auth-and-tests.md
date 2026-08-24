@@ -1337,11 +1337,10 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   `redirect_uri` passed in.
 - `viya_write()`/`viya_load_table()` warn (not error) on a non-"completed"
   job state — callers checking `r$state` themselves is still on them.
-- Next phase of testing work (Workbench example scripts, a second live-test
-  file) is earmarked for a different test cluster,
-  `https://caf.pcluster.soleng.posit.it`, for both the Workbench and
-  standalone/SSO auth paths. `viya.pcluster.soleng.posit.it` (used by this
-  PR's live tests) stays as-is; don't retarget it.
+- Do not assume or hardcode a Viya test cluster for future testing work
+  (Workbench example scripts, a second live-test file, a follow-up PR) —
+  ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`
+  (used by this PR's live tests) stays as-is for this PR; don't retarget it.
 ```
 
 - [ ] **Step 2: Commit**
