@@ -96,5 +96,8 @@ viya_members <- function(h, libref) {
   jr <- viya_submit(h, code)
   if (!identical(jr$state, "completed"))
     warning("dictionary query state: ", jr$state)
-  viya_read(h, "WORK", "_VIYAR_MEMBERS")
+  mem <- suppressMessages(viya_read(h, "WORK", "_VIYAR_MEMBERS"))
+  message("read ", nrow(mem), " member", if (nrow(mem) != 1) "s" else "",
+          " of ", toupper(libref))
+  mem
 }
