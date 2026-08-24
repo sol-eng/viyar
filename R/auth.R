@@ -73,13 +73,25 @@ viya_token <- function(refresh = FALSE) {
 
   if (requireNamespace("rstudioapi", quietly = TRUE) &&
       isTRUE(rstudioapi::isAvailable())) {
-    int <- rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration)
+    # isAvailable() is TRUE in any RStudio-family frontend (Desktop,
+    # Server, Positron) -- not just Workbench. findOAuthIntegration()
+    # itself asserts a genuine Workbench session and throws otherwise, so
+    # both calls are wrapped in tryCatch to fall through to the next
+    # resolution step (rather than error) on plain RStudio Desktop or a
+    # local Positron session with no Workbench attached.
+    int <- tryCatch(
+      rstudioapi::findOAuthIntegration(name = viya_config()$wb_integration),
+      error = function(e) NULL)
     if (!is.null(int)) {
-      tok <- rstudioapi::getOAuthCredentials(audience = int$guid)$access_token
-      .token_cache$tok <- tok
-      .token_cache$refresh <- NULL
-      .token_cache$exp <- .jwt_exp(tok)
-      return(tok)
+      tok <- tryCatch(
+        rstudioapi::getOAuthCredentials(audience = int$guid)$access_token,
+        error = function(e) NULL)
+      if (!is.null(tok)) {
+        .token_cache$tok <- tok
+        .token_cache$refresh <- NULL
+        .token_cache$exp <- .jwt_exp(tok)
+        return(tok)
+      }
     }
   }
 

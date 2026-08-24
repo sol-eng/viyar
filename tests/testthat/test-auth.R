@@ -61,6 +61,22 @@ test_that("Workbench managed OAuth is tried when rstudioapi reports available", 
   expect_equal(.token_cache$tok, tok)
 })
 
+test_that("a non-Workbench RStudio/Positron session falls through instead of erroring", {
+  # isAvailable() is TRUE outside Workbench too (plain RStudio Desktop, a
+  # local Positron session); findOAuthIntegration() itself asserts a real
+  # Workbench session and throws otherwise -- viya_token() must catch that
+  # and fall through to its next resolution step, not propagate the error.
+  withr::local_envvar(VIYA_TOKEN = "")
+  reset_token_cache()
+  testthat::local_mocked_bindings(
+    isAvailable = function(...) TRUE,
+    findOAuthIntegration = function(...)
+      stop("assertWorkbenchSession(): only available within Posit Workbench sessions"),
+    .package = "rstudioapi")
+
+  expect_error(viya_token(), "viya_login\\(\\)")
+})
+
 test_that("a clear error is thrown when nothing is available", {
   withr::local_envvar(VIYA_TOKEN = "")
   reset_token_cache()
