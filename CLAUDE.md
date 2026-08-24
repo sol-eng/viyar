@@ -69,6 +69,15 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   `testthat::local_mocked_bindings()` (for `rstudioapi` calls). No
   network, safe to run anywhere:
   `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
+  **Known gap:** this covers config/auth/login/utils/input-validation, but
+  `viya_submit()`, `viya_session()`'s retry loop, `viya_read()`/
+  `viya_write()`, `viya_upload()`/`viya_download()`, and the CAS
+  listing/load functions have no mocked happy-path coverage — only the
+  live tier exercises them (real signal when run, but not a merge gate).
+  This was a scope decision made explicitly during the final whole-branch
+  review of this PR, not an oversight: closing it needs its own
+  per-function review cycle rather than a rushed addition. Treat as the
+  top priority for a follow-up PR.
 - **Live** (`tests/testthat/test-live-*.R`): real calls against
   `https://viya.pcluster.soleng.posit.it`. Before running these:
   1. `viya_config(url = "https://viya.pcluster.soleng.posit.it")`
