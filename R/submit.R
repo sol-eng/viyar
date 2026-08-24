@@ -74,15 +74,18 @@ viya_datasets <- function(h, libref) {
     httr2::req_perform() |> httr2::resp_body_json()
   nms <- vapply(r$items, `[[`, "", "name")
   if (length(nms)) return(nms)
-  viya_members(h, libref)$MEMNAME
+  viya_members(h, libref)$memname
 }
 
 #' Member detail for a libref via dictionary.tables
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param libref Library reference.
-#' @return A data frame with member name, type (`DATA`/`VIEW`) and row
-#'   count.
+#' @return A data frame with columns `memname`, `memtype` (`DATA`/`VIEW`),
+#'   and `nobs` (row count) — lowercase, matching the exact case of the
+#'   `PROC SQL` `SELECT` list that creates the underlying table (SAS
+#'   preserves the case a variable is defined with; it does not
+#'   uppercase it).
 #' @export
 viya_members <- function(h, libref) {
   stopifnot(inherits(h, "viyar"), nzchar(libref))
