@@ -59,3 +59,39 @@ test_that("viya_fs_mkdir validates its arguments", {
                       base = "https://viya.example.com"), class = "viyar")
   expect_error(viya_fs_mkdir(h, ""))
 })
+
+test_that("viya_fs_upload PUTs raw file content to the escaped remote path", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  tmp <- tempfile(fileext = ".txt")
+  writeLines("upload test content", tmp)
+
+  seen <- NULL
+  resp <- httr2::response_json(status = 200, body = list(name = "hello.txt"))
+  httr2::local_mocked_responses(function(req) { seen <<- req; resp })
+
+  out <- viya_fs_upload(h, tmp, "a/b/hello.txt")
+  expect_equal(out, "a/b/hello.txt")
+  expect_match(seen$url, "/files/a~fs~b~fs~hello.txt/content$")
+  expect_equal(seen$method, "PUT")
+})
+
+test_that("viya_fs_upload validates its arguments", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_fs_upload(h, "/no/such/file.txt", "a/b.txt"))
+})
+
+test_that("viya_fs_download GETs raw content and writes it to local_path", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  seen <- NULL
+  resp <- httr2::response(status = 200, body = charToRaw("download test content"))
+  httr2::local_mocked_responses(function(req) { seen <<- req; resp })
+
+  local_path <- tempfile(fileext = ".txt")
+  out <- viya_fs_download(h, "a/b/hello.txt", local_path)
+  expect_equal(out, local_path)
+  expect_equal(readLines(local_path), "download test content")
+  expect_match(seen$url, "/files/a~fs~b~fs~hello.txt/content$")
+})

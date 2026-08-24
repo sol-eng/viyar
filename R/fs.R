@@ -54,3 +54,52 @@ viya_fs_mkdir <- function(h, path) {
   }
   invisible(path)
 }
+
+#' Upload a local file to a compute session's filesystem
+#'
+#' Unlike [viya_upload()] (which uploads to SAS Content), this writes
+#' directly to the OS filesystem the compute session sees.
+#'
+#' @param h A `viyar` handle from [viya_session()].
+#' @param local_path Path of the local file.
+#' @param remote_path Destination path on the session's filesystem, e.g.
+#'   `"/gel/homes/samiul/report.csv"`.
+#' @return `remote_path`, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_fs_upload(h, "report.html", "/gel/homes/samiul/report.html")
+#' }
+#' @export
+viya_fs_upload <- function(h, local_path, remote_path) {
+  stopifnot(inherits(h, "viyar"), file.exists(local_path), nzchar(remote_path))
+  .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
+                      .viya_fs_escape(remote_path), "/content")) |>
+    httr2::req_method("PUT") |>
+    httr2::req_headers(`Content-Type` = "application/octet-stream") |>
+    httr2::req_body_file(local_path) |>
+    httr2::req_perform()
+  message("uploaded '", local_path, "' -> ", remote_path)
+  invisible(remote_path)
+}
+
+#' Download a file from a compute session's filesystem
+#'
+#' @param h A `viyar` handle from [viya_session()].
+#' @param remote_path Path on the session's filesystem, e.g.
+#'   `"/gel/homes/samiul/report.csv"`.
+#' @param local_path Local destination path.
+#' @return `local_path`, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_fs_download(h, "/gel/homes/samiul/report.csv", "report.csv")
+#' }
+#' @export
+viya_fs_download <- function(h, remote_path, local_path) {
+  stopifnot(inherits(h, "viyar"), nzchar(remote_path))
+  .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
+                      .viya_fs_escape(remote_path), "/content")) |>
+    httr2::req_perform() |> httr2::resp_body_raw() |>
+    writeBin(local_path)
+  message("downloaded ", remote_path, " -> ", local_path)
+  invisible(local_path)
+}
