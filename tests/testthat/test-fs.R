@@ -86,7 +86,7 @@ test_that("viya_fs_download GETs raw content and writes it to local_path", {
   h <- structure(list(token = "t", session = "sess1", context = "ctx",
                       base = "https://viya.example.com"), class = "viyar")
   seen <- NULL
-  resp <- httr2::response(status = 200, body = charToRaw("download test content"))
+  resp <- httr2::response(status = 200, body = charToRaw("download test content\n"))
   httr2::local_mocked_responses(function(req) { seen <<- req; resp })
 
   local_path <- tempfile(fileext = ".txt")
