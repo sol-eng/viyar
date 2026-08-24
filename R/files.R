@@ -64,6 +64,55 @@ viya_download <- function(h, viya_path, local_path) {
   tryCatch(.viya_folder(h, folder_path), error = function(e) NULL)
 }
 
+#' Delete a file from SAS Content
+#'
+#' @param h A `viyar` handle from [viya_session()].
+#' @param viya_path Full Viya path of the file, e.g.
+#'   `"/Public/report.html"`.
+#' @return `NULL`, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_delete_file(h, "/Public/report.html")
+#' }
+#' @export
+viya_delete_file <- function(h, viya_path) {
+  stopifnot(inherits(h, "viyar"), nzchar(viya_path))
+  fld <- .viya_folder(h, dirname(viya_path))
+  fname <- basename(viya_path)
+  mem <- .viya_req(h, paste0("/folders/folders/", fld$id,
+                             "/members?limit=500")) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  hit <- Filter(function(m) identical(m$name, fname), mem$items)
+  if (!length(hit)) stop("'", fname, "' not found in ", dirname(viya_path))
+  .viya_req(h, hit[[1]]$uri) |>
+    httr2::req_method("DELETE") |> httr2::req_perform()
+  message("deleted ", viya_path)
+  invisible(NULL)
+}
+
+#' Delete a folder from SAS Content
+#'
+#' Deletes `path` and, if it isn't empty, everything under it
+#' (`recursive=true` is always sent -- it's a no-op for an empty folder
+#' and required for a non-empty one).
+#'
+#' @param h A `viyar` handle from [viya_session()].
+#' @param path Full Viya folder path to delete, e.g. `"/Public/Reports"`.
+#' @return `NULL`, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_delete_folder(h, "/Public/Reports/2026")
+#' }
+#' @export
+viya_delete_folder <- function(h, path) {
+  stopifnot(inherits(h, "viyar"), nzchar(path))
+  fld <- .viya_folder(h, path)
+  .viya_req(h, paste0("/folders/folders/", fld$id, "?recursive=true")) |>
+    httr2::req_method("DELETE") |> httr2::req_perform()
+  message("deleted folder ", path)
+  invisible(NULL)
+}
+
 #' Create a folder in SAS Content (the Files/Folders service)
 #'
 #' Creates every missing folder along `path`, one level at a time -- the

@@ -134,6 +134,66 @@ test_that("viya_fs_download GETs raw content and writes it to local_path", {
   expect_match(seen$url, "/files/a~fs~b~fs~hello.txt/content$")
 })
 
+test_that("viya_fs_delete GETs for the ETag, then DELETEs with a matching If-Match header", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_get <- httr2::response(status = 200, headers = list(ETag = '"abc123"'))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_get, resp_delete)
+  i <- 0
+  seen <- list()
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    seen[[i]] <<- req
+    seq[[i]]
+  })
+
+  out <- viya_fs_delete(h, "a/b/hello.txt")
+  expect_equal(out, "a/b/hello.txt")
+  expect_equal(i, 2)
+  expect_match(seen[[1]]$url, "/files/a~fs~b~fs~hello.txt$")
+  expect_match(seen[[2]]$url, "/files/a~fs~b~fs~hello.txt$")
+  expect_equal(seen[[2]]$method, "DELETE")
+  expect_equal(seen[[2]]$headers[["If-Match"]], '"abc123"')
+})
+
+test_that("viya_fs_delete works identically for a directory path (no recursive flag needed)", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_get <- httr2::response(status = 200, headers = list(ETag = '"dir-etag"'))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_get, resp_delete)
+  i <- 0
+  seen <- list()
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    seen[[i]] <<- req
+    seq[[i]]
+  })
+
+  out <- viya_fs_delete(h, "/tmp/some_dir")
+  expect_equal(out, "/tmp/some_dir")
+  expect_equal(seen[[2]]$headers[["If-Match"]], '"dir-etag"')
+})
+
+test_that("viya_fs_delete validates its arguments", {
+  bad_h <- list(token = "t", base = "https://viya.example.com")
+  expect_error(viya_fs_delete(bad_h, "a/b"))
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_fs_delete(h, ""))
+})
+
+test_that("viya_fs_delete requires an active compute session", {
+  h_no_session <- structure(list(token = "t", context = "ctx",
+                                 base = "https://viya.example.com"), class = "viyar")
+  expect_error(viya_fs_delete(h_no_session, "a/b"))
+})
+
 test_that("viya_fs_list returns a data frame of directory members", {
   h <- structure(list(token = "t", session = "sess1", context = "ctx",
                       base = "https://viya.example.com"), class = "viyar")

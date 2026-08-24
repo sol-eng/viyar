@@ -116,6 +116,40 @@ viya_fs_download <- function(h, remote_path, local_path) {
   invisible(local_path)
 }
 
+#' Delete a file or directory from a compute session's filesystem
+#'
+#' Works identically for a single file and a non-empty directory --
+#' confirmed live, no separate recursive flag needed. The File System
+#' service requires an `If-Match` header carrying the resource's current
+#' `ETag` (omitting it returns `428 Precondition Required`), so this
+#' first does a `GET` to read the `ETag`, then sends the `DELETE` with
+#' that value.
+#'
+#' @param h A `viyar` handle from [viya_session()] (must have an active
+#'   compute session).
+#' @param path File or directory path to delete, e.g.
+#'   `"/gel/homes/samiul/reports/2026"`. A relative path is resolved
+#'   against the session's current working directory.
+#' @return `path`, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
+#' }
+#' @export
+viya_fs_delete <- function(h, path) {
+  stopifnot(inherits(h, "viyar"), nzchar(h$session %||% ""), nzchar(path))
+  req <- .viya_req(h, paste0("/compute/sessions/", h$session, "/files/",
+                             .viya_fs_escape(path))) |>
+    httr2::req_options(path_as_is = TRUE)
+  etag <- req |> httr2::req_perform() |> httr2::resp_header("etag")
+  req |>
+    httr2::req_method("DELETE") |>
+    httr2::req_headers(`If-Match` = etag) |>
+    httr2::req_perform()
+  message("deleted ", path)
+  invisible(path)
+}
+
 #' List a directory's contents on a compute session's filesystem
 #'
 #' @param h A `viyar` handle from [viya_session()].
