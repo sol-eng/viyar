@@ -642,9 +642,13 @@ Append to `R/login.R`:
 #'   [viya_config()]).
 #' @param client_id OAuth client id registered on the Viya server for
 #'   interactive/CLI logins.
-#' @param redirect_uri Optional redirect URI to send in the authorization
-#'   request. Leave `NULL` to let the server use its registered default
-#'   for `client_id`.
+#' @param redirect_uri Redirect URI to send in the authorization request.
+#'   Defaults to the OAuth out-of-band value
+#'   (`"urn:ietf:wg:oauth:2.0:oob"`), which is SAS's documented redirect
+#'   for CLI-style logins where the code is copy-pasted back rather than
+#'   captured by a listening redirect target. Pass `NULL` to omit it
+#'   entirely and rely on the server's registered default for
+#'   `client_id`, if you know that's what your deployment expects.
 #' @param scope OAuth scopes to request.
 #' @return The access token (character scalar), invisibly.
 #' @examples
@@ -655,7 +659,7 @@ Append to `R/login.R`:
 #' @export
 viya_login <- function(url = viya_config()$url,
                        client_id = "vscode-positron",
-                       redirect_uri = NULL,
+                       redirect_uri = "urn:ietf:wg:oauth:2.0:oob",
                        scope = "openid") {
   if (!nzchar(url)) stop("No Viya URL configured. viya_config(url = ...) ",
                          "or set VIYA_URL.")

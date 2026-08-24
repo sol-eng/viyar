@@ -30,7 +30,7 @@ New file `R/login.R`.
 ```r
 viya_login(url = viya_config()$url,
            client_id = "vscode-positron",
-           redirect_uri = NULL,
+           redirect_uri = "urn:ietf:wg:oauth:2.0:oob",
            scope = "openid")
 ```
 
@@ -42,15 +42,24 @@ Flow:
    `code_challenge_methods_supported: ["S256", "plain"]`, and PKCE is the
    correct choice for a public client with no secret.
 2. Build the authorize URL:
-   `{url}/SASLogon/oauth/authorize?client_id=...&response_type=code&scope=...&code_challenge=...&code_challenge_method=S256[&redirect_uri=...]`.
+   `{url}/SASLogon/oauth/authorize?client_id=...&response_type=code&scope=...&code_challenge=...&code_challenge_method=S256&redirect_uri=urn:ietf:wg:oauth:2.0:oob`.
+   `urn:ietf:wg:oauth:2.0:oob` is SAS's own documented redirect value for
+   CLI-style logins where the code is copy-pasted back rather than
+   captured by a listening redirect target (confirmed against
+   developer.sas.com's authentication docs, not assumed).
 3. Open it with `utils::browseURL()` and also print it to the console (so
    it still works when there's no local browser to launch, e.g. over SSH).
 4. Prompt (`readline`) for what the user sees after logging in. Accept
    either a bare authorization code or a full redirect URL and extract
-   `code=` from either — the exact shape of what "vscode-positron" redirects
-   to (a real `redirect_uri` vs. a display-only confirmation page) is
-   unconfirmed until we drive one login live. First real run determines
-   this; the parsing is written to be tolerant of both.
+   `code=` from either — the oob redirect should mean the code is
+   displayed directly rather than an actual browser redirect happening,
+   but the parsing stays tolerant of both shapes since this is confirmed
+   only by driving one login live (Task 12), not by SAS's docs alone.
+   `client_id = "vscode-positron"` itself is not a SAS-documented default
+   client (SAS's own VS Code extension docs name `vscode` as the
+   pre-registered built-in id) — it only works if it's been separately
+   registered on the target Viya deployment, which the user has stated is
+   the case for this PR's test cluster specifically.
 5. Exchange the code at `/SASLogon/oauth/token`
    (`grant_type=authorization_code`, `code`, `code_verifier`, `client_id`,
    and `redirect_uri` if one was used in step 2).
