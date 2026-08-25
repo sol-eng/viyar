@@ -7,8 +7,9 @@ Authors@R: c(
     person("Posit Software, PBC", role = c("cph", "fnd")))
 Description: Connect R to SAS Viya using only REST APIs. Provides compute
     session management, SAS code submission, libref and dataset discovery,
-    bidirectional data transfer, Viya Files/Folders access, and caslib
-    table loading with promotion. Complements 'swat' (CAS-only) and offers
+    bidirectional data transfer, Viya Files/Folders access, caslib
+    table loading with promotion, and read access to the SAS Clinical
+    Acceleration Repository. Complements 'swat' (CAS-only) and offers
     a pure-R alternative to Python-based 'saspy'/'sasr' with no Python
     dependency.
 License: MIT + file LICENSE
