@@ -19,11 +19,13 @@ test_that("viya_submit() returns ODS HTML when the code opens an html5 destinati
   h <- viya_session()
   on.exit(viya_end(h), add = TRUE)
 
-  # _tomods1 is the fileref the Compute service exposes on its results
-  # endpoint -- writing the html5 destination anywhere else produces a file
-  # on the compute server's disk instead of a downloadable result.
+  # No file= on purpose: the compute server routes a fileref-less html5
+  # destination to its results endpoint. Naming an explicit fileref writes
+  # to the server's disk instead, and _tomods1 in particular does not exist
+  # here -- that is SASPy's own fileref, and asking for it fails live with
+  # "ERROR: No logical assign for filename _TOMODS1."
   r <- viya_submit(h, paste(
-    "ods html5(id=viyar) file=_tomods1 options(bitmap_mode='inline');",
+    "ods html5(id=viyar);",
     "proc print data=sashelp.class(obs=3); run;",
     "ods html5(id=viyar) close;", sep = "\n"),
     output = "html")

@@ -48,9 +48,16 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   design decision, not an omission): a destination produces output only
   when the user's own code opens it, and a compute server starts with
   `ods listing` closed, so `$listing` is empty for unwrapped code. For
-  `$html`, the user's `ods html5` must write to the `_tomods1` fileref
-  — that is what puts output on the results endpoint rather than on the
-  compute server's disk.
+  `$html`, the user's `ods html5` must carry **no** `file=` — a
+  fileref-less destination is what the compute server routes to its
+  results endpoint. Do **not** copy SASPy's `file=_tomods1` here:
+  `_tomods1` is a fileref SASPy assigns itself, not a Compute built-in,
+  and it fails live with `ERROR: No logical assign for filename
+  _TOMODS1.` (confirmed on `viya.pcluster.soleng.posit.it`; it was
+  written into this package's docs from the SASPy pattern and corrected
+  only after a live run disproved it). Result items are named for the
+  generated file (`sashtml.htm`, `sashtml2.htm`, ...), not for the
+  procedure that produced them.
 - `R/cas.R` — caslib table/file listing and `viya_load_table()`/
   `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
 - `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
@@ -169,6 +176,24 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
 
 - Live tests are not wired into CI (no Viya credentials available there)
   — they're a local developer/agent tool, not a merge gate.
+- `test-live-submit.R` is only **partly** validated. Its listing test
+  passed live against `viya.pcluster.soleng.posit.it`; the HTML test's
+  fetch-and-download path was confirmed by hand (a fileref-less
+  `ods html5` returned a 32KB `sashtml2.htm` result), but the test as
+  written has never had a green run — the cluster started returning
+  HTTP 500 `process initialization for the Compute server ... failed`
+  on every `viya_session()` attempt partway through, before the
+  corrected test could be re-run. Two things are therefore unverified:
+  (1) whether `r$state` is `"completed"` for these jobs, because every
+  observed job in that run reported `"error"` — including a plain
+  `proc print` with no ODS statements at all, which suggests SAS's
+  sticky `SYSCC` poisoning a session after an earlier failure rather
+  than a per-job result, but this was never isolated in a fresh
+  session; and (2) the `rel` value on a result item's link, so
+  `.viya_result_path()`'s `content`-then-`self` preference order is
+  still inferred from the API docs (the live item carried exactly one
+  link, and the fallback chain did reach it). Re-run this file first
+  when a working cluster is available.
 - `viya_login()`'s `redirect_uri` defaults to the OAuth out-of-band value
   (`urn:ietf:wg:oauth:2.0:oob`), which is SAS's own documented pattern for
   CLI-style paste-back logins — confirmed against developer.sas.com, not

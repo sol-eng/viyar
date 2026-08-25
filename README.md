@@ -74,17 +74,21 @@ r <- viya_submit(h, "ods listing;
 cat(r$listing, sep = "\n")
 ```
 
-For HTML, write the `html5` destination to the `_tomods1` fileref. That
-is the one the Compute service publishes on its results endpoint;
-anywhere else lands on the compute server's disk instead:
+For HTML, open an `html5` destination with no `file=`. The compute
+server then routes the output to its results endpoint, where `viyar`
+can download it. Giving it an explicit `file=` writes to the compute
+server's own disk instead, where the results endpoint never sees it:
 
 ```r
-r <- viya_submit(h, "ods html5(id=viyar) file=_tomods1;
+r <- viya_submit(h, "ods html5(id=viyar);
                      proc means data=sashelp.class; run;
                      ods html5(id=viyar) close;",
                  output = "html")
 writeLines(r$html[[1]], "means.html")
 ```
+
+`r$html` is named for the files the server generated (`sashtml.htm`,
+`sashtml1.htm`, ...), not for the procedures that produced them.
 
 ## Folders and files
 
