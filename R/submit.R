@@ -1,22 +1,48 @@
-#' Submit SAS code and return the log
+#' Submit SAS code and return its output
 #'
 #' Creates a compute job, polls until it reaches a terminal state, and
-#' retrieves the full log.
+#' retrieves the output kinds named in `output`.
+#'
+#' Each kind costs one or more extra requests, so only the ones you ask
+#' for are fetched and only those appear in the result. The default,
+#' `"log"`, matches what earlier versions always returned.
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param code SAS code as a single string (newlines allowed).
 #' @param poll_s Polling interval in seconds.
 #' @param timeout_s Give up after this many seconds.
-#' @return A list with elements `state`, `log` (character vector of log
-#'   lines), and `job_id`.
+#' @param output Which output kinds to retrieve: any of `"log"`,
+#'   `"listing"` (traditional LST text) and `"html"` (ODS output).
+#'   Defaults to `"log"`.
+#'
+#'   `viyar` does not add ODS statements to your code, so a destination
+#'   produces output only when your own code opens it. A compute server
+#'   starts with `ods listing` closed, so `$listing` is empty until you
+#'   write `ods listing;` yourself (see the second example).
+#' @return A list with element `state`, then one element per requested
+#'   output kind — `log` and `listing` are character vectors of lines,
+#'   `html` is a character vector of HTML documents named by ODS output
+#'   object — and finally `job_id`.
 #' @examples
 #' \dontrun{
 #' r <- viya_submit(h, "proc means data=sashelp.class; run;")
 #' cat(r$log, sep = "\n")
+#'
+#' r <- viya_submit(h, "ods listing;
+#'                      proc print data=sashelp.class(obs=5); run;
+#'                      ods listing close;",
+#'                  output = c("log", "listing"))
+#' cat(r$listing, sep = "\n")
+#'
+#' r <- viya_submit(h, "proc means data=sashelp.class; run;",
+#'                  output = "html")
+#' writeLines(r$html[[1]], "means.html")
 #' }
 #' @export
-viya_submit <- function(h, code, poll_s = 1, timeout_s = 300) {
+viya_submit <- function(h, code, poll_s = 1, timeout_s = 300,
+                        output = c("log")) {
   stopifnot(inherits(h, "viyar"))
+  output <- match.arg(output, c("log", "listing", "html"), several.ok = TRUE)
   job <- .viya_req(h, paste0("/compute/sessions/", h$session, "/jobs")) |>
     httr2::req_method("POST") |>
     httr2::req_body_json(list(version = 1,
@@ -32,12 +58,55 @@ viya_submit <- function(h, code, poll_s = 1, timeout_s = 300) {
       break
     Sys.sleep(poll_s)
   }
-  lg <- .viya_req(h, paste0("/compute/sessions/", h$session,
-                            "/jobs/", job$id, "/log?limit=100000")) |>
+  out <- list(state = state)
+  if ("log" %in% output)
+    out$log <- .viya_job_lines(h, job$id, "log")
+  if ("listing" %in% output)
+    out$listing <- .viya_job_lines(h, job$id, "listing")
+  if ("html" %in% output)
+    out$html <- .viya_job_html(h, job$id)
+  out$job_id <- job$id
+  out
+}
+
+# The log and listing endpoints return the same collection shape:
+# items[] each carrying a `line` (and a `type` we don't filter on).
+.viya_job_lines <- function(h, job_id, what) {
+  r <- .viya_req(h, paste0("/compute/sessions/", h$session, "/jobs/", job_id,
+                           "/", what, "?limit=100000")) |>
     httr2::req_perform() |> httr2::resp_body_json()
-  list(state = state,
-       log = vapply(lg$items, function(x) x$line %||% "", ""),
-       job_id = job$id)
+  vapply(r$items, function(x) x$line %||% "", "")
+}
+
+# The results collection mixes ODS output with TABLE entries describing
+# datasets the job created; only the former has HTML to download, and each
+# item's content sits behind its own link rather than in the collection.
+.viya_job_html <- function(h, job_id) {
+  r <- .viya_req(h, paste0("/compute/sessions/", h$session, "/jobs/", job_id,
+                           "/results?limit=1000")) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  ods <- Filter(function(x) identical(x$type, "ODS"), r$items)
+  if (!length(ods)) return(character())
+  html <- vapply(ods, function(x) {
+    .viya_req(h, .viya_result_path(h, x$links)) |>
+      httr2::req_perform() |> httr2::resp_body_string()
+  }, "")
+  names(html) <- vapply(ods, function(x) x$name %||% x$id %||% "", "")
+  html
+}
+
+# Prefers an explicit `content` relation, falling back to `self` (which is
+# what the service returns for a result whose content is the resource
+# itself). Hrefs come back as paths, but strip the base URL if a deployment
+# ever returns an absolute one -- `.viya_req()` prepends it either way.
+.viya_result_path <- function(h, links) {
+  rels <- vapply(links, function(l) l$rel %||% "", "")
+  i <- match("content", rels)
+  if (is.na(i)) i <- match("self", rels)
+  if (is.na(i)) i <- 1L
+  href <- links[[i]]$href %||% ""
+  if (!nzchar(href)) stop("compute result has no downloadable link")
+  if (startsWith(href, h$base)) substring(href, nchar(h$base) + 1L) else href
 }
 
 #' List assigned librefs

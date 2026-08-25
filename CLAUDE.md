@@ -31,8 +31,26 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   with reachability-gated retry through Viya errorCode 5830 pod-launch
   timeouts), `viya_end()`, `viya_sessions()`, `viya_kill()`,
   `viya_contexts()`.
-- `R/submit.R` — `viya_submit()` (submit SAS code, poll, fetch log),
+- `R/submit.R` — `viya_submit()` (submit SAS code, poll, fetch output),
   `viya_librefs()`, `viya_datasets()`, `viya_members()`.
+  `viya_submit()`'s `output` argument selects which of the job's three
+  output endpoints to fetch: `"log"` (the default, and the only one
+  fetched before this argument existed), `"listing"`
+  (`/jobs/{id}/listing` — same `items[].line` collection shape as the
+  log, so both go through `.viya_job_lines()`), and `"html"`
+  (`/jobs/{id}/results`, whose items mix `type = "ODS"` output with
+  `type = "TABLE"` entries describing datasets the job created; only
+  the ODS ones are downloaded, each via its own `content`-or-`self`
+  link). Fetching is gated on the argument, so an unrequested kind
+  costs no request and produces no list element —
+  `test-submit.R` pins this. **`viyar` deliberately does not wrap the
+  submitted code in ODS statements** (SASPy does; this was an explicit
+  design decision, not an omission): a destination produces output only
+  when the user's own code opens it, and a compute server starts with
+  `ods listing` closed, so `$listing` is empty for unwrapped code. For
+  `$html`, the user's `ods html5` must write to the `_tomods1` fileref
+  — that is what puts output on the results endpoint rather than on the
+  compute server's disk.
 - `R/cas.R` — caslib table/file listing and `viya_load_table()`/
   `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
 - `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
@@ -127,8 +145,10 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   `testthat::local_mocked_bindings()` (for `rstudioapi` calls). No
   network, safe to run anywhere:
   `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
-  **Known gap:** this covers config/auth/login/utils/input-validation, but
-  `viya_submit()`, `viya_session()`'s retry loop, `viya_read()`/
+  **Known gap:** this covers config/auth/login/utils/input-validation and
+  `viya_submit()`'s `output` handling (log/listing/html selection, ODS
+  item filtering, link resolution), but `viya_session()`'s retry loop,
+  `viya_submit()`'s poll/timeout loop, `viya_read()`/
   `viya_write()`, `viya_upload()`/`viya_download()`, and the CAS
   listing/load functions have no mocked happy-path coverage — only the
   live tier exercises them (real signal when run, but not a merge gate).
@@ -196,8 +216,9 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   changes) surfaced further gaps worth a follow-up PR, not addressed here:
   - **Pagination**: every list-returning function (`viya_contexts`,
     `viya_sessions`, `viya_caslib_files`, `viya_caslib_tables`,
-    `viya_librefs`, `viya_datasets`, folder `members`, and `viya_read()`'s
-    `columns` call) takes one page at a single hardcoded `limit` and never
+    `viya_librefs`, `viya_datasets`, folder `members`, `viya_read()`'s
+    `columns` call, and `viya_submit()`'s log/listing/results fetches)
+    takes one page at a single hardcoded `limit` and never
     follows the documented `links.next` hypermedia relation — a collection
     larger than that limit is silently truncated with no warning.
   - **Compute job polling**: `viya_submit()` busy-polls

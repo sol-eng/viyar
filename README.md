@@ -47,6 +47,45 @@ viya_upload(h, "report.html", "/Public")
 viya_end(h)
 ```
 
+## Submitting SAS code
+
+`viya_submit()` returns the log by default. Ask for the listing (LST
+text) or the ODS HTML with `output`:
+
+```r
+r <- viya_submit(h, code, output = c("log", "listing", "html"))
+r$log        # character vector of log lines
+r$listing    # character vector of listing lines
+r$html       # character vector of HTML documents, named by ODS object
+```
+
+Each kind costs extra requests, so `viyar` fetches only what you ask
+for. The default, `output = "log"`, behaves as before.
+
+`viyar` does not add ODS statements to your code. A destination
+produces output only when your own code opens it, and a compute server
+starts with `ods listing` closed:
+
+```r
+r <- viya_submit(h, "ods listing;
+                     proc print data=sashelp.class(obs=5); run;
+                     ods listing close;",
+                 output = "listing")
+cat(r$listing, sep = "\n")
+```
+
+For HTML, write the `html5` destination to the `_tomods1` fileref. That
+is the one the Compute service publishes on its results endpoint;
+anywhere else lands on the compute server's disk instead:
+
+```r
+r <- viya_submit(h, "ods html5(id=viyar) file=_tomods1;
+                     proc means data=sashelp.class; run;
+                     ods html5(id=viyar) close;",
+                 output = "html")
+writeLines(r$html[[1]], "means.html")
+```
+
 ## Folders and files
 
 Two separate storage systems, two separate function families:
