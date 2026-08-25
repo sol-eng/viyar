@@ -176,24 +176,32 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
 
 - Live tests are not wired into CI (no Viya credentials available there)
   — they're a local developer/agent tool, not a merge gate.
-- `test-live-submit.R` is only **partly** validated. Its listing test
-  passed live against `viya.pcluster.soleng.posit.it`; the HTML test's
-  fetch-and-download path was confirmed by hand (a fileref-less
-  `ods html5` returned a 32KB `sashtml2.htm` result), but the test as
-  written has never had a green run — the cluster started returning
-  HTTP 500 `process initialization for the Compute server ... failed`
-  on every `viya_session()` attempt partway through, before the
-  corrected test could be re-run. Two things are therefore unverified:
-  (1) whether `r$state` is `"completed"` for these jobs, because every
-  observed job in that run reported `"error"` — including a plain
-  `proc print` with no ODS statements at all, which suggests SAS's
-  sticky `SYSCC` poisoning a session after an earlier failure rather
-  than a per-job result, but this was never isolated in a fresh
-  session; and (2) the `rel` value on a result item's link, so
-  `.viya_result_path()`'s `content`-then-`self` preference order is
-  still inferred from the API docs (the live item carried exactly one
-  link, and the fallback chain did reach it). Re-run this file first
-  when a working cluster is available.
+- `test-live-submit.R` passed in full against
+  `viya.pcluster.soleng.posit.it` (2026-08-25, all 8 assertions). Two
+  findings from that run are worth keeping:
+  - A job's `state` is `"completed"` as expected, but SAS's error state
+    is **sticky within a session**: once one submission fails, every
+    later job in that same session reports `"error"` even with a clean
+    log and no `ERROR` lines of its own — a plain `proc print` was
+    observed reporting `"error"` purely because an earlier submission in
+    that session had failed. When diagnosing a surprising `"error"`
+    state, check whether anything earlier in the session failed before
+    suspecting the code you just submitted; a fresh `viya_session()` is
+    the way to isolate it.
+  - An ODS result item carries exactly **one** link, with
+    `rel = "self"`, `method = "GET"`, `type = "text/html"` — there is no
+    `content` relation, so `.viya_result_path()` reaches the content via
+    its `self` fallback. Its `href` is
+    `/compute/sessions/{id}/results/{hash}/{filename}` — under the
+    *session*, not under `/jobs/{jobId}/` where the collection was
+    listed. Follow the returned `href`; do not construct the content URL
+    from the job path.
+- The cluster returns intermittent HTTP 500
+  `process initialization for the Compute server ... failed` on session
+  creation — seen on the first attempt of most `viya_session()` calls in
+  that run, with the retry loop recovering on attempt 2-4 every time.
+  This is what `viya_session()`'s `tries`/`wait` retry exists for; a
+  single 500 is not a defect. A run with `tries = 1` will fail often.
 - `viya_login()`'s `redirect_uri` defaults to the OAuth out-of-band value
   (`urn:ietf:wg:oauth:2.0:oob`), which is SAS's own documented pattern for
   CLI-style paste-back logins — confirmed against developer.sas.com, not
