@@ -62,6 +62,32 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `viya_unload_table()` (CAS memory management via `PROC CASUTIL`).
 - `R/data.R` — `viya_read()`/`viya_write()` (R data.frame <-> SAS
   dataset, via the Compute data service and a CSV-staging `PROC IMPORT`).
+  `viya_read()` sends **`format=false`** on the `/rows` request. The
+  endpoint's own default is `format=true`, which returns *formatted
+  display text* rather than stored values — that default silently broke
+  every formatted numeric column: a `date9.` column arrived as
+  `"01JAN2020"` and a `dollar12.2` column as `"$1,234.50"`, both of which
+  `as.numeric()` turns into `NA` (a CDISC ADaM read came back 254/254 NA
+  on `TRTSDT`), and a `10.4` column arrived pre-rounded to four decimals
+  (which manufactured a false 4.3e-5 SAS-vs-R discrepancy in a
+  `PROC LIFETEST` chi-square before the cause was found). Two things to
+  know about this parameter: SAS's own GitHub API samples call it
+  `formatted`, not `format` — developer.sas.com's current `getRows`
+  reference says `format`, and an unrecognised query parameter is
+  *silently ignored*, so a wrong name looks exactly like the bug coming
+  back; and with `format=false` the digits SAS emits depend on the
+  session's `DECIMALCONV` option (`STDIEEE` is the documented setting for
+  full significant digits) — untested, so a right-value/too-few-digits
+  failure in `test-live-data.R` points here, not at the fix.
+  Date conversion is **not** automatic and cannot be: the Compute
+  `columns` endpoint reports a format's `decimals` and `length` but never
+  its *name*, so nothing in the response identifies a date column. Hence
+  `viya_read(dates = c("TRTSDT", ...))` — matched case-insensitively
+  (SAS preserves defined case), resolved before the first row is fetched,
+  and an error (never a silent no-op) on a name that is absent or belongs
+  to a character column. Sibling parameters on the same endpoint, all
+  currently unused: `formatMissingValues`, `returnNumAsString`,
+  `includeColumnNames`, `includeIndex`, `where`.
 - `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`/
   `viya_delete_file()`/`viya_delete_folder()` (SAS Content: the
   Files/Folders service). Both deletes resolve the target to its
@@ -154,8 +180,10 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   `Rscript -e 'pkgload::load_all("."); testthat::test_dir("tests/testthat")'`
   **Known gap:** this covers config/auth/login/utils/input-validation and
   `viya_submit()`'s `output` handling (log/listing/html selection, ODS
-  item filtering, link resolution), but `viya_session()`'s retry loop,
-  `viya_submit()`'s poll/timeout loop, `viya_read()`/
+  item filtering, link resolution) and `viya_read()`'s value handling
+  (`test-data.R`: the `format=false` query parameter, `dates`
+  conversion/matching/validation), but `viya_session()`'s retry loop,
+  `viya_submit()`'s poll/timeout loop, `viya_read()`'s paging,
   `viya_write()`, `viya_upload()`/`viya_download()`, and the CAS
   listing/load functions have no mocked happy-path coverage — only the
   live tier exercises them (real signal when run, but not a merge gate).

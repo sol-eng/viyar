@@ -4,7 +4,7 @@
 \alias{viya_read}
 \title{Read a SAS dataset into an R data.frame}
 \usage{
-viya_read(h, libref, table, max_rows = 1e+05, chunk = 5000)
+viya_read(h, libref, table, dates = NULL, max_rows = 1e+05, chunk = 5000)
 }
 \arguments{
 \item{h}{A `viyar` handle from [viya_session()].}
@@ -12,6 +12,11 @@ viya_read(h, libref, table, max_rows = 1e+05, chunk = 5000)
 \item{libref}{Library reference, e.g. `"PUBLIC"`.}
 
 \item{table}{Dataset name, e.g. `"HEART"`.}
+
+\item{dates}{Character vector of numeric columns holding SAS dates, to
+convert to `Date`. Matched against the table's column names
+case-insensitively; a name that is absent, or that belongs to a
+character column, is an error rather than a silent no-op.}
 
 \item{max_rows}{Cap on rows read (a message is emitted if hit).}
 
@@ -24,8 +29,23 @@ A plain data.frame.
 Streams rows from the Compute data service in chunks and returns a plain
 data.frame with numeric SAS columns converted to numeric.
 }
+\details{
+Rows are requested with `format=false`, so cells carry the stored values
+rather than their formatted display text. The endpoint's own default is
+`format=true`, which returns display strings — a `DATE9.` column would
+arrive as `"01JAN2020"` and a `DOLLAR12.2` column as `"$1,234.50"`, both
+of which coerce to `NA`, and a `10.4` column would arrive already
+rounded to four decimals.
+
+The trade-off is that a SAS date arrives as its stored number: days
+since 1960-01-01. Name those columns in `dates` to get R `Date`s back.
+This is not automatic because the Compute `columns` endpoint reports
+only a format's `decimals` and `length`, never its name, so there is
+nothing in the response that identifies a column as a date.
+}
 \examples{
 \dontrun{
 heart <- viya_read(h, "PUBLIC", "HEART")
+adsl  <- viya_read(h, "WORK", "ADSL", dates = c("TRTSDT", "TRTEDT"))
 }
 }
