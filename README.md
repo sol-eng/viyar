@@ -37,6 +37,7 @@ r <- viya_submit(h, "cas m; caslib _all_ assign;")
 viya_librefs(h)                        # now includes PUBLIC, CASUSER, ...
 
 heart <- viya_read(h, "PUBLIC", "HEART")     # SAS/CAS -> R
+adsl  <- viya_read(h, "WORK", "ADSL", dates = "TRTSDT")  # SAS dates -> Date
 viya_write(h, subset(heart, Cholesterol > 300), "WORK", "HIGH_CHOL")
 
 viya_caslib_tables(h, "Public")        # loaded / unloaded states
