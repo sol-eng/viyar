@@ -2,9 +2,9 @@
 % Please edit documentation in R/submit.R
 \name{viya_submit}
 \alias{viya_submit}
-\title{Submit SAS code and return the log}
+\title{Submit SAS code and return its output}
 \usage{
-viya_submit(h, code, poll_s = 1, timeout_s = 300)
+viya_submit(h, code, poll_s = 1, timeout_s = 300, output = c("log"))
 }
 \arguments{
 \item{h}{A `viyar` handle from [viya_session()].}
@@ -14,18 +14,49 @@ viya_submit(h, code, poll_s = 1, timeout_s = 300)
 \item{poll_s}{Polling interval in seconds.}
 
 \item{timeout_s}{Give up after this many seconds.}
+
+\item{output}{Which output kinds to retrieve: any of `"log"`,
+  `"listing"` (traditional LST text) and `"html"` (ODS output).
+  Defaults to `"log"`.
+
+  `viyar` does not add ODS statements to your code, so a destination
+  produces output only when your own code opens it. A compute server
+  starts with `ods listing` closed, so `$listing` is empty until you
+  write `ods listing;` yourself (see the second example). For
+  `"html"`, open `ods html5` with no `file=` — the compute server
+  then routes the output to the results endpoint `viyar` reads; an
+  explicit `file=` writes to the server's own disk, out of reach.}
 }
 \value{
-A list with elements `state`, `log` (character vector of log
-  lines), and `job_id`.
+A list with element `state`, then one element per requested
+  output kind — `log` and `listing` are character vectors of lines,
+  `html` is a character vector of HTML documents named for the files
+  the server generated (`sashtml.htm`, ...) — and finally `job_id`.
 }
 \description{
 Creates a compute job, polls until it reaches a terminal state, and
-retrieves the full log.
+retrieves the output kinds named in `output`.
+}
+\details{
+Each kind costs one or more extra requests, so only the ones you ask
+for are fetched and only those appear in the result. The default,
+`"log"`, matches what earlier versions always returned.
 }
 \examples{
 \dontrun{
 r <- viya_submit(h, "proc means data=sashelp.class; run;")
 cat(r$log, sep = "\n")
+
+r <- viya_submit(h, "ods listing;
+                     proc print data=sashelp.class(obs=5); run;
+                     ods listing close;",
+                 output = c("log", "listing"))
+cat(r$listing, sep = "\n")
+
+r <- viya_submit(h, "ods html5(id=viyar);
+                     proc means data=sashelp.class; run;
+                     ods html5(id=viyar) close;",
+                 output = "html")
+writeLines(r$html[[1]], "means.html")
 }
 }
