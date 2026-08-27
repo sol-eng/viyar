@@ -2,7 +2,7 @@
 
 **Work with SAS Viya from R**
 
-`viyar` addresses the missing piece in the R – SASViya integration:
+`viyar` addresses the missing piece in the R – SAS Viya integration:
 
 |            | CAS | Compute (SAS code, PROCs) | Runtime deps |
 |------------|-----|---------------------------|--------------|
@@ -114,10 +114,10 @@ viya_upload(h, "report.html", "/Public/Reports/2026")
 viya_delete_file(h, "/Public/Reports/2026/report.html")
 viya_delete_folder(h, "/Public/Reports/2026")
 
-viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
-viya_fs_upload(h, "report.html", "/gel/homes/samiul/reports/2026/report.html")
-viya_fs_list(h, "/gel/homes/samiul/reports/2026")
-viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
+viya_fs_mkdir(h, "/nfs/homes/user/reports/2026")
+viya_fs_upload(h, "report.html", "/nfs/homes/user/reports/2026/report.html")
+viya_fs_list(h, "/nfs/homes/user/reports/2026")
+viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 ```
 
 ## Authenticating to SAS Viya

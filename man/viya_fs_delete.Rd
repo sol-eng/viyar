@@ -11,7 +11,7 @@ viya_fs_delete(h, path)
 compute session).}
 
 \item{path}{File or directory path to delete, e.g.
-`"/gel/homes/samiul/reports/2026"`. A relative path is resolved
+`"/nfs/homes/user/reports/2026"`. A relative path is resolved
 against the session's current working directory.}
 }
 \value{
@@ -27,6 +27,6 @@ that value.
 }
 \examples{
 \dontrun{
-viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
+viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 }
 }

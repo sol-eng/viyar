@@ -10,7 +10,7 @@ viya_fs_download(h, remote_path, local_path)
 \item{h}{A `viyar` handle from [viya_session()].}
 
 \item{remote_path}{Path on the session's filesystem, e.g.
-`"/gel/homes/samiul/report.csv"`.}
+`"/nfs/homes/user/report.csv"`.}
 
 \item{local_path}{Local destination path.}
 }
@@ -22,6 +22,6 @@ Download a file from a compute session's filesystem
 }
 \examples{
 \dontrun{
-viya_fs_download(h, "/gel/homes/samiul/report.csv", "report.csv")
+viya_fs_download(h, "/nfs/homes/user/report.csv", "report.csv")
 }
 }

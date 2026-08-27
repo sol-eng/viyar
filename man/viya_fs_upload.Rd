@@ -12,7 +12,7 @@ viya_fs_upload(h, local_path, remote_path)
 \item{local_path}{Path of the local file.}
 
 \item{remote_path}{Destination path on the session's filesystem, e.g.
-`"/gel/homes/samiul/report.csv"`.}
+`"/nfs/homes/user/report.csv"`.}
 }
 \value{
 `remote_path`, invisibly.
@@ -23,6 +23,6 @@ directly to the OS filesystem the compute session sees.
 }
 \examples{
 \dontrun{
-viya_fs_upload(h, "report.html", "/gel/homes/samiul/report.html")
+viya_fs_upload(h, "report.html", "/nfs/homes/user/report.html")
 }
 }
