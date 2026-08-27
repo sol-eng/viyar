@@ -8,8 +8,8 @@ test_that("viya_write then viya_read round-trips a data.frame", {
   back <- viya_read(h, "WORK", "VIYAR_TEST_RT")
 
   # PROC IMPORT preserves the staged CSV header's exact case (`id`, `val`)
-  # rather than uppercasing it -- confirmed live against the soleng
-  # cluster, not assumed.
+  # rather than uppercasing it -- confirmed live against a real cluster,
+  # not assumed.
   expect_equal(nrow(back), 3)
   expect_equal(sort(back$id), 1:3)
 })

@@ -199,9 +199,9 @@ test_that("viya_fs_list returns a data frame of directory members", {
                       base = "https://viya.example.com"), class = "viyar")
   resp <- httr2::response_json(status = 200, body = list(items = list(
     list(name = "b", isDirectory = TRUE, size = 15,
-         path = "/gel/homes/samiul/a"),
+         path = "/nfs/homes/user/a"),
     list(name = "hello.txt", isDirectory = FALSE, size = 26,
-         path = "/gel/homes/samiul/a"))))
+         path = "/nfs/homes/user/a"))))
   seen <- NULL
   httr2::local_mocked_responses(function(req) { seen <<- req; resp })
 

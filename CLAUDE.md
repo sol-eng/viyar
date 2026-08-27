@@ -53,7 +53,7 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   results endpoint. Do **not** copy SASPy's `file=_tomods1` here:
   `_tomods1` is a fileref SASPy assigns itself, not a Compute built-in,
   and it fails live with `ERROR: No logical assign for filename
-  _TOMODS1.` (confirmed on `viya.pcluster.soleng.posit.it`; it was
+  _TOMODS1.` (confirmed live on a real cluster; it was
   written into this package's docs from the SASPy pattern and corrected
   only after a live run disproved it). Result items are named for the
   generated file (`sashtml.htm`, `sashtml2.htm`, ...), not for the
@@ -191,9 +191,10 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   review of this PR, not an oversight: closing it needs its own
   per-function review cycle rather than a rushed addition. Treat as the
   top priority for a follow-up PR.
-- **Live** (`tests/testthat/test-live-*.R`): real calls against
-  `https://viya.pcluster.soleng.posit.it`. Before running these:
-  1. `viya_config(url = "https://viya.pcluster.soleng.posit.it")`
+- **Live** (`tests/testthat/test-live-*.R`): real calls against a real
+  Viya deployment. Nothing in the suite hardcodes a host -- point it at
+  your own cluster. Before running these:
+  1. `viya_config(url = "https://your-viya-host")`, or set `VIYA_URL`
   2. `viya_login()` (or set `VIYA_TOKEN` directly if you already have a
      token)
   3. Then run the same `test_dir()` command — `helper-live.R`'s
@@ -204,9 +205,8 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
 
 - Live tests are not wired into CI (no Viya credentials available there)
   — they're a local developer/agent tool, not a merge gate.
-- `test-live-submit.R` passed in full against
-  `viya.pcluster.soleng.posit.it` (2026-08-25, all 8 assertions). Two
-  findings from that run are worth keeping:
+- `test-live-submit.R` passed in full against a live cluster (2026-08-25,
+  all 8 assertions). Two findings from that run are worth keeping:
   - A job's `state` is `"completed"` as expected, but SAS's error state
     is **sticky within a session**: once one submission fails, every
     later job in that same session reports `"error"` even with a clean
@@ -236,18 +236,17 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   assumed. `client_id = "vscode-positron"` is NOT itself a SAS-documented
   default client (SAS's VS Code extension docs name `vscode`) — it only
   works if separately registered on the target Viya deployment. Validated
-  against the `soleng` test cluster specifically; if login ever fails with
-  an invalid-client error on a different deployment, this is why.
+  against one specific test cluster; if login ever fails with an
+  invalid-client error on a different deployment, this is why.
 - `viya_write()`/`viya_load_table()` warn (not error) on a non-"completed"
   job state — callers checking `r$state` themselves is still on them.
-- `viya.pcluster.soleng.posit.it`'s CAS server was found stuck in
+- The primary test cluster's CAS server was found stuck in
   `"starting"` (a DNS lookup failure for its backend pod, confirmed via
   `GET /casManagement/servers/{server}/state`) during Task 12's live
   validation — a cluster infrastructure issue, not a viyar defect.
-  `test-live-cas.R` was instead validated against
-  `caf.pcluster.soleng.posit.it`, whose CAS server was healthy. If
-  `test-live-cas.R` 404s while the other live tests pass, check that
-  cluster's CAS state before assuming a regression.
+  `test-live-cas.R` was instead validated against a second cluster, whose
+  CAS server was healthy. If `test-live-cas.R` 404s while the other live
+  tests pass, check that cluster's CAS state before assuming a regression.
 - `viya_upload()`'s Files API has no overwrite-on-upload — a fixed
   filename collides with HTTP 409 on a second run against the same
   cluster (found live). `test-live-data.R`'s upload test uses a
@@ -270,8 +269,9 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   assuming a code bug.
 - Do not assume or hardcode a Viya test cluster for future testing work
   (Workbench example scripts, a second live-test file, a follow-up PR) —
-  ask the user explicitly which URL to use each time. `viya.pcluster.soleng.posit.it`
-  (used by this PR's live tests) stays as-is for this PR; don't retarget it.
+  ask the user explicitly which URL to use each time. Whatever cluster a
+  given PR's live tests were validated against stays as-is for that PR;
+  don't retarget it.
 - A documentation audit against developer.sas.com/rest-apis (cross-checked
   live, not from GitHub examples — those are known to lag behind API
   changes) surfaced further gaps worth a follow-up PR, not addressed here:

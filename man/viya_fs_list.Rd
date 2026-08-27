@@ -20,7 +20,7 @@ List a directory's contents on a compute session's filesystem
 }
 \examples{
 \dontrun{
-viya_fs_list(h, "/gel/homes/samiul")
+viya_fs_list(h, "/nfs/homes/user")
 viya_fs_list(h, ".")  # what's in the session's working directory
 }
 }

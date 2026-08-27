@@ -28,12 +28,12 @@
 #' @param h A `viyar` handle from [viya_session()] (must have an active
 #'   compute session -- this operates on that session's filesystem).
 #' @param path Directory path to create, e.g.
-#'   `"/gel/homes/samiul/reports/2026"`. A relative path is resolved
+#'   `"/nfs/homes/user/reports/2026"`. A relative path is resolved
 #'   against the session's current working directory.
 #' @return `path`, invisibly.
 #' @examples
 #' \dontrun{
-#' viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
+#' viya_fs_mkdir(h, "/nfs/homes/user/reports/2026")
 #' }
 #' @export
 viya_fs_mkdir <- function(h, path) {
@@ -73,11 +73,11 @@ viya_fs_mkdir <- function(h, path) {
 #' @param h A `viyar` handle from [viya_session()].
 #' @param local_path Path of the local file.
 #' @param remote_path Destination path on the session's filesystem, e.g.
-#'   `"/gel/homes/samiul/report.csv"`.
+#'   `"/nfs/homes/user/report.csv"`.
 #' @return `remote_path`, invisibly.
 #' @examples
 #' \dontrun{
-#' viya_fs_upload(h, "report.html", "/gel/homes/samiul/report.html")
+#' viya_fs_upload(h, "report.html", "/nfs/homes/user/report.html")
 #' }
 #' @export
 viya_fs_upload <- function(h, local_path, remote_path) {
@@ -97,12 +97,12 @@ viya_fs_upload <- function(h, local_path, remote_path) {
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param remote_path Path on the session's filesystem, e.g.
-#'   `"/gel/homes/samiul/report.csv"`.
+#'   `"/nfs/homes/user/report.csv"`.
 #' @param local_path Local destination path.
 #' @return `local_path`, invisibly.
 #' @examples
 #' \dontrun{
-#' viya_fs_download(h, "/gel/homes/samiul/report.csv", "report.csv")
+#' viya_fs_download(h, "/nfs/homes/user/report.csv", "report.csv")
 #' }
 #' @export
 viya_fs_download <- function(h, remote_path, local_path) {
@@ -128,12 +128,12 @@ viya_fs_download <- function(h, remote_path, local_path) {
 #' @param h A `viyar` handle from [viya_session()] (must have an active
 #'   compute session).
 #' @param path File or directory path to delete, e.g.
-#'   `"/gel/homes/samiul/reports/2026"`. A relative path is resolved
+#'   `"/nfs/homes/user/reports/2026"`. A relative path is resolved
 #'   against the session's current working directory.
 #' @return `path`, invisibly.
 #' @examples
 #' \dontrun{
-#' viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
+#' viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 #' }
 #' @export
 viya_fs_delete <- function(h, path) {
@@ -158,7 +158,7 @@ viya_fs_delete <- function(h, path) {
 #' @return A data frame with columns `name`, `isDirectory`, `size`, `path`.
 #' @examples
 #' \dontrun{
-#' viya_fs_list(h, "/gel/homes/samiul")
+#' viya_fs_list(h, "/nfs/homes/user")
 #' viya_fs_list(h, ".")  # what's in the session's working directory
 #' }
 #' @export

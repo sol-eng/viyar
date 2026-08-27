@@ -2,7 +2,7 @@
 
 **Work with SAS Viya from R**
 
-ViyaR addresses the missing piece in the R – SASViya integration:
+`viyar` addresses the missing piece in the R – SAS Viya integration:
 
 |            | CAS | Compute (SAS code, PROCs) | Runtime deps |
 |------------|-----|---------------------------|--------------|
@@ -114,10 +114,10 @@ viya_upload(h, "report.html", "/Public/Reports/2026")
 viya_delete_file(h, "/Public/Reports/2026/report.html")
 viya_delete_folder(h, "/Public/Reports/2026")
 
-viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
-viya_fs_upload(h, "report.html", "/gel/homes/samiul/reports/2026/report.html")
-viya_fs_list(h, "/gel/homes/samiul/reports/2026")
-viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
+viya_fs_mkdir(h, "/nfs/homes/user/reports/2026")
+viya_fs_upload(h, "report.html", "/nfs/homes/user/reports/2026/report.html")
+viya_fs_list(h, "/nfs/homes/user/reports/2026")
+viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 ```
 
 ## Authenticating to SAS Viya
@@ -133,13 +133,21 @@ viya_fs_delete(h, "/gel/homes/samiul/reports/2026")
 - Anywhere: set `VIYA_TOKEN`.
 
 ## Installation
-viyar is an internal package hosted at
-[sol-eng/viyar](https://github.com/sol-eng/viyar). Installation uses SSH
-(personal access tokens are disabled for this organization), so you need
-an SSH key registered with GitHub and authorized for the sol-eng org.
+
+viyar is not on CRAN. Install it from GitHub:
 
 ```r
-# from a source checkout:
-remotes::install_git("git@github.com:sol-eng/viyar.git")
-
+# install.packages("pak")
+pak::pak("sol-eng/viyar")
 ```
+
+Or with remotes:
+
+```r
+# install.packages("remotes")
+remotes::install_github("sol-eng/viyar")
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

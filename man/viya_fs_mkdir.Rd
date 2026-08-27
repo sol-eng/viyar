@@ -11,7 +11,7 @@ viya_fs_mkdir(h, path)
 compute session -- this operates on that session's filesystem).}
 
 \item{path}{Directory path to create, e.g.
-`"/gel/homes/samiul/reports/2026"`. A relative path is resolved
+`"/nfs/homes/user/reports/2026"`. A relative path is resolved
 against the session's current working directory.}
 }
 \value{
@@ -28,6 +28,6 @@ repeatedly).
 }
 \examples{
 \dontrun{
-viya_fs_mkdir(h, "/gel/homes/samiul/reports/2026")
+viya_fs_mkdir(h, "/nfs/homes/user/reports/2026")
 }
 }
