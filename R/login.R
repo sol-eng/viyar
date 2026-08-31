@@ -34,7 +34,7 @@
 }
 
 .viya_token_exchange <- function(url, body) {
-  httr2::request(paste0(url, "/SASLogon/oauth/token")) |>
+  httr2::request(.viya_url(url, "/SASLogon/oauth/token")) |>
     httr2::req_headers(Accept = "application/json") |>
     httr2::req_timeout(30) |>
     (\(req) do.call(httr2::req_body_form, c(list(req), body)))() |>
@@ -92,7 +92,7 @@ viya_login <- function(url = viya_config()$url,
             code_challenge = challenge, code_challenge_method = "S256")
   if (!is.null(redirect_uri)) q$redirect_uri <- redirect_uri
   authorize_url <- do.call(httr2::url_modify_query,
-                           c(list(paste0(url, "/SASLogon/oauth/authorize")), q))
+                           c(list(.viya_url(url, "/SASLogon/oauth/authorize")), q))
 
   message("Opening Viya login in your browser:\n", authorize_url)
   tryCatch(utils::browseURL(authorize_url), error = function(e) NULL)
