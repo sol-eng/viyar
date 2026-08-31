@@ -13,6 +13,44 @@ test_that(".viya_req wires a 3-try retry policy", {
   expect_equal(req$policies$retry_max_tries, 3)
 })
 
+test_that(".viya_url joins with exactly one slash whichever side carries it", {
+  # A VIYA_URL env var ending in "/" produced "//compute/contexts?limit=100",
+  # which Viya 404s ("There is no handler defined for the path"). Neither
+  # side of the join is guaranteed clean: the base comes from user/env
+  # input, and some paths are hrefs the service hands back.
+  expect_equal(.viya_url("https://x.example", "/compute/contexts"),
+               "https://x.example/compute/contexts")
+  expect_equal(.viya_url("https://x.example/", "/compute/contexts"),
+               "https://x.example/compute/contexts")
+  expect_equal(.viya_url("https://x.example", "compute/contexts"),
+               "https://x.example/compute/contexts")
+  expect_equal(.viya_url("https://x.example/", "compute/contexts"),
+               "https://x.example/compute/contexts")
+  expect_equal(.viya_url("https://x.example///", "///compute/contexts"),
+               "https://x.example/compute/contexts")
+})
+
+test_that(".viya_url preserves a base URL's own path prefix", {
+  expect_equal(.viya_url("https://x.example/viya/", "/compute/contexts"),
+               "https://x.example/viya/compute/contexts")
+})
+
+test_that("a trailing slash on `url` builds the same request as none", {
+  seen <- list()
+  resp <- httr2::response_json(status = 200, body = list(items = list()))
+  httr2::local_mocked_responses(function(req) {
+    seen[[length(seen) + 1L]] <<- req
+    resp
+  })
+  for (u in c("https://x.example", "https://x.example/")) {
+    viya_contexts(token = "t", url = u)
+  }
+  expect_equal(seen[[1]]$url, "https://x.example/compute/contexts?limit=100")
+  # Asserting both forms agree, rather than only the trailing-slash one,
+  # so a fix that normalized the already-clean form into breakage fails here.
+  expect_equal(seen[[2]]$url, seen[[1]]$url)
+})
+
 test_that(".viya_req surfaces Viya's JSON error message and remediation", {
   resp <- httr2::response_json(
     status = 404,

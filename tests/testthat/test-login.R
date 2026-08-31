@@ -56,6 +56,17 @@ test_that(".viya_token_exchange posts a form body and returns parsed JSON", {
   expect_equal(out$refresh_token, "RT")
 })
 
+test_that(".viya_token_exchange tolerates a trailing slash on the URL", {
+  # Same origin as the /compute//... bug: a VIYA_URL env var ending in "/".
+  # SASLogon is reached before any .viya_req() call, so it needs the join too.
+  seen <- NULL
+  resp <- httr2::response_json(status = 200, body = list(access_token = "AT"))
+  httr2::local_mocked_responses(function(req) { seen <<- req; resp })
+  .viya_token_exchange("https://viya.example.com/",
+                       list(grant_type = "refresh_token", code = "x"))
+  expect_equal(seen$url, "https://viya.example.com/SASLogon/oauth/token")
+})
+
 test_that(".viya_token_exchange surfaces SASLogon's error_description", {
   resp <- httr2::response_json(status = 400, body = list(
     error = "invalid_grant", error_description = "Invalid authorization code"))
