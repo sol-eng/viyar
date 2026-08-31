@@ -90,11 +90,36 @@ viya_delete_file <- function(h, viya_path) {
   invisible(NULL)
 }
 
+# Delete every non-folder child under `folder_uri`. The members listing
+# takes its own `recursive` flag, which flattens the whole descendant tree
+# into one response, so no walking is needed here. Each member carries the
+# owning service's URI (`/files/files/{id}` for a file) -- the same URI
+# `viya_delete_file()` resolves to, and deleting it also clears the
+# membership. `reference` members are left alone: they point at resources
+# someone else owns, and they don't block a folder delete.
+.viya_purge_content <- function(h, folder_uri) {
+  mem <- .viya_req(h, paste0(folder_uri, "/members?recursive=true&limit=500")) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  for (m in mem$items) {
+    if (identical(m$contentType, "folder") || !identical(m$type, "child")) next
+    .viya_req(h, m$uri) |>
+      httr2::req_method("DELETE") |> httr2::req_perform()
+  }
+  invisible(NULL)
+}
+
 #' Delete a folder from SAS Content
 #'
-#' Deletes `path` and, if it isn't empty, everything under it
-#' (`recursive=true` is always sent -- it's a no-op for an empty folder
-#' and required for a non-empty one).
+#' Deletes `path` and everything under it.
+#'
+#' The Folders service's own `recursive=true` (which it advertises on a
+#' folder as the `deleteRecursively` link) recurses through *folder*
+#' members only -- "Any non-folder content is not deleted", in the API's
+#' own words. A file member, at `/files/files/{id}`, instead fails the
+#' whole `DELETE` with `409` / `errorCode 11516` "You cannot delete the
+#' folder because it is not empty", however deep in the tree it sits
+#' (confirmed live). So the non-folder content is deleted first, then the
+#' one `recursive=true` `DELETE` takes the folders-only tree that's left.
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param path Full Viya folder path to delete, e.g. `"/Public/Reports"`.
@@ -107,7 +132,9 @@ viya_delete_file <- function(h, viya_path) {
 viya_delete_folder <- function(h, path) {
   stopifnot(inherits(h, "viyar"), nzchar(path))
   fld <- .viya_folder(h, path)
-  .viya_req(h, paste0("/folders/folders/", fld$id, "?recursive=true")) |>
+  uri <- paste0("/folders/folders/", fld$id)
+  .viya_purge_content(h, uri)
+  .viya_req(h, paste0(uri, "?recursive=true")) |>
     httr2::req_method("DELETE") |> httr2::req_perform()
   message("deleted folder ", path)
   invisible(NULL)
