@@ -19,15 +19,15 @@ test_that("viya_delete_folder removes a nested, non-empty SAS Content folder", {
   on.exit(viya_end(h), add = TRUE)
 
   path <- paste0(viya_test_folder(), "/viyar_live_test_del_", as.integer(Sys.time()))
-  skip_if_forbidden(viya_create_folder(h, paste0(path, "/nested")))
+  skip_if_forbidden(viya_create_folder(h, paste0(path, "/nested/deeper")))
 
-  fname <- "leftover.txt"
   tmp_up <- tempfile(fileext = ".txt")
   writeLines("in a folder about to be deleted", tmp_up)
-  viya_upload(h, tmp_up, paste0(path, "/nested"), name = fname)
+  # a file at the top and one two levels down -- the Folders service's
+  # own recursive DELETE refuses the whole tree over either of them.
+  viya_upload(h, tmp_up, path, name = "leftover.txt")
+  viya_upload(h, tmp_up, paste0(path, "/nested/deeper"), name = "deep.txt")
 
-  # deletes the whole tree in one call, including the file inside it --
-  # recursive=true is always sent by viya_delete_folder().
   viya_delete_folder(h, path)
   expect_error(.viya_folder(h, path))
 })
