@@ -93,9 +93,15 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   Files/Folders service). Both deletes resolve the target to its
   resource `id`/`uri` first (via `.viya_folder()` or a folder's
   `members` listing), then `DELETE` by that id -- no `ETag`/`If-Match`
-  needed here (unlike `R/fs.R` below). `viya_delete_folder()` always
-  sends `?recursive=true` (a no-op for an empty folder, required for a
-  non-empty one) rather than branching on emptiness.
+  needed here (unlike `R/fs.R` below). `viya_delete_folder()` first calls
+  `.viya_purge_content()` (one flat `members?recursive=true` listing of
+  the whole descendant tree; `DELETE`s every `child` member whose
+  `contentType` isn't `"folder"`, by that member's own `uri`) and only
+  then sends one `?recursive=true` `DELETE` at the top. The
+  `recursive=true` parameter on the `DELETE` is real -- the service
+  advertises it itself as a folder's `deleteRecursively` link -- but it
+  covers **folder members only**; see "Known gaps" for the live evidence
+  and the spec wording.
 - `R/fs.R` — `viya_fs_mkdir()`/`viya_fs_upload()`/`viya_fs_download()`/
   `viya_fs_list()`/`viya_fs_delete()`: a second, distinct storage system
   -- the real OS filesystem a compute session sees (home directory,
@@ -307,11 +313,50 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   (correctly) fail rather than delete the wrong version — this is the
   API's own optimistic-concurrency design, not a `viyar` bug, but worth
   knowing if a delete call intermittently 412/428s under concurrent
-  access to the same path. Also: `viya_delete_file()`/
-  `viya_delete_folder()` (SAS Content) were designed and mocked-tested
-  against documented/previously-confirmed behavior only — this PR had no
-  live cluster access, so double-deleting an already-gone resource,
-  deleting a folder mid-populate, and the exact `viya_fs_delete()`
-  `ETag` format on a real cluster are all unverified beyond the mocked
-  tests; `test-live-fs.R`/`test-live-files.R` are written and ready for
-  whoever runs the live tier next.
+  access to the same path.
+- `test-live-files.R` has now been run live (2026-08-31) and it found a
+  real, shipped bug on the first run — `viya_delete_folder()` 409'd on
+  exactly the case its own documentation promised to handle. **How the
+  Folders service's recursive delete really behaves**, established by
+  probing a live cluster rather than by reading SAS's samples:
+  - `recursive=true` *is* a genuine parameter, not one of the
+    silently-ignored ones. The service names it itself: a folder resource
+    carries a `deleteRecursively` link whose `href` is
+    `/folders/folders/{id}?recursive=true`. Don't re-litigate this by
+    grepping SAS's docs — ask the folder for its own `links`.
+  - It covers **folder members only**. The spec says so outright, in the
+    `deleteFolder` description: *"If the folder is not empty, a recursive
+    option can be specified to indicate a recursive delete. ... **Any
+    non-folder content is not deleted.**"*
+    (https://developer.sas.com/api/apis/folders-v7/specifications/openapi.yml)
+    Live, a leftover file member doesn't just survive — it fails the
+    whole `DELETE` with `409` / `errorCode 11516` "You cannot delete the
+    folder because it is not empty", at any depth. A tree of nothing but
+    folders deletes in one call; add one file anywhere in it and the same
+    call 409s. (The docs are inconsistent about the status for this:
+    `deleteFolder`'s response table says `400` and `409`, the error-code
+    table on the same site says `412`/`11515`. The cluster returns
+    `409`/`11516`. Don't match on the number.)
+  - So the delete order matters: delete the non-folder content first,
+    then one `recursive=true` `DELETE` takes the folders-only remainder.
+    This is what `.viya_purge_content()` does, and it's the same sequence
+    SAS's own `pyviyatools/deletefolderandcontent.py` uses.
+  - `GET /folders/folders/{id}/members` takes its **own** `recursive`
+    flag, which returns the entire descendant tree as one flat list —
+    confirmed live (a 3-level tree came back as 5 items in one call). Use
+    it rather than walking level by level. Its `limit` defaults to **20**,
+    so it must be set explicitly.
+  - Fields: a member's `contentType` is `"folder"`/`"file"`/`"report"`/…
+    and is what discriminates a subfolder from content — not `type`, which
+    is `"child"` or `"reference"`. Delete only `child` members:
+    a `reference` points at a resource another folder owns, and per the
+    Folders overview only child members count when the service tests
+    whether a folder is empty, so references never block the delete.
+  - A member carries both a `delete` link (removes only the membership
+    row, leaving the file orphaned — the spec: *"This does not delete the
+    target resource"*) and a `deleteResource` link (removes the underlying
+    resource). `viyar` wants the latter, i.e. `member$uri`. Deleting the
+    file also cleans up its membership automatically, via an event.
+  - Still unverified beyond the mocked tests: double-deleting an
+    already-gone resource, deleting a folder mid-populate, and the exact
+    `viya_fs_delete()` `ETag` format on a real cluster.
