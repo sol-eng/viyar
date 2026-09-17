@@ -86,3 +86,81 @@ test_that("viya_submit_quarto() rejects an unknown output kind", {
   h <- .quarto_handle()
   expect_error(viya_submit_quarto(h, "run;", output = "pdf"), "should be one of")
 })
+
+test_that(".viya_resolve_session() looks up a string option as a variable name in the global env", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("test_quarto_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("test_quarto_handle", envir = .GlobalEnv))
+
+  expect_identical(.viya_resolve_session("test_quarto_handle"), h)
+})
+
+test_that(".viya_resolve_session() accepts an already-resolved handle object", {
+  h <- .quarto_handle()
+  expect_identical(.viya_resolve_session(h), h)
+})
+
+test_that(".viya_resolve_session() errors clearly with no session option", {
+  expect_error(.viya_resolve_session(NULL), "requires a `session`")
+})
+
+test_that(".viya_resolve_session() errors clearly when the name isn't a viyar handle", {
+  skip_if_not_installed("knitr")
+  assign("test_not_a_handle", list(x = 1), envir = .GlobalEnv)
+  withr::defer(rm("test_not_a_handle", envir = .GlobalEnv))
+
+  expect_error(.viya_resolve_session("test_not_a_handle"),
+              "does not resolve to a viyar handle")
+})
+
+test_that(".viya_sas_render() echoes the code and shows the log as a fenced block by default", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = TRUE), "proc means; run;",
+                          list(state = "completed", log = c("NOTE: done")))
+
+  expect_s3_class(out, "knit_asis")
+  expect_true(grepl("```sas\nproc means; run;\n```", out, fixed = TRUE))
+  expect_true(grepl("NOTE: done", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() omits the code block when echo is FALSE", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = FALSE), "proc means; run;",
+                          list(state = "completed", log = c("NOTE: done")))
+
+  expect_false(grepl("proc means; run;", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() emits html output raw, without fencing", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = FALSE), "ods html5; proc means; run;",
+                          list(state = "completed", html = c(Print = "<p>hi</p>")))
+
+  expect_true(grepl("<p>hi</p>", out, fixed = TRUE))
+  expect_false(grepl("```", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_engine() resolves the session, submits the code, and renders html output", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_test_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("engine_test_handle", envir = .GlobalEnv))
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(
+    seen, state = "completed",
+    results = list(list(id = "r1", name = "Print", type = "ODS", links = list(
+      list(rel = "content",
+           href = "/compute/sessions/sess1/jobs/job1/results/r1/content")))),
+    content = list("r1/content" = "<html>Alfred</html>")))
+
+  options <- list(session = "engine_test_handle",
+                  code = c("ods html5;", "proc print data=sashelp.class; run;"),
+                  echo = TRUE, viya.output = "html")
+
+  out <- .viya_sas_engine(options)
+
+  expect_true(grepl("<html>Alfred</html>", out, fixed = TRUE))
+  expect_true(grepl("```sas", out, fixed = TRUE))
+})
