@@ -120,13 +120,14 @@ test_that(".viya_resolve_session() gives a clear error when the named object doe
               "does not name any object")
 })
 
-test_that(".viya_sas_render() echoes the code and shows the log as a fenced block by default", {
+test_that(".viya_sas_render() echoes the code as a highlighted sourceCode block and shows the log as a fenced block by default", {
   skip_if_not_installed("knitr")
   out <- .viya_sas_render(list(echo = TRUE), "proc means; run;",
                           list(state = "completed", log = c("NOTE: done")))
 
   expect_s3_class(out, "knit_asis")
-  expect_true(grepl("```sas\nproc means; run;\n```", out, fixed = TRUE))
+  expect_true(grepl('<pre class="sourceCode sas">', out, fixed = TRUE))
+  expect_true(grepl('<span class="kw">proc</span>', out, fixed = TRUE))
   expect_true(grepl("NOTE: done", out, fixed = TRUE))
 })
 
@@ -196,6 +197,66 @@ test_that(".viya_sas_render() keeps the emitted iframe tag on one physical line 
   expect_false(grepl("\n[ \t]*\n", iframe_tag))
 })
 
+test_that(".viya_sas_highlight() marks step-boundary/statement keywords with the pandoc 'kw' class", {
+  out <- .viya_sas_highlight("data x; set y; run;")
+  expect_true(grepl('<span class="kw">data</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="kw">set</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="kw">run</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks control-flow statements with the pandoc 'cf' class", {
+  out <- .viya_sas_highlight("if x then y; else z;")
+  expect_true(grepl('<span class="cf">if</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="cf">then</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="cf">else</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks procedure names with the pandoc 'ot' class, distinct from step keywords", {
+  out <- .viya_sas_highlight("proc means data=sashelp.class; run;")
+  expect_true(grepl('<span class="kw">proc</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="ot">means</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks ODS statements: 'ods'/'close' as keywords, the destination name as a procedure-like token", {
+  out <- .viya_sas_highlight("ods html5; ods html5 close;")
+  expect_true(grepl('<span class="kw">ods</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="ot">html5</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="kw">close</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks both comment styles with the pandoc 'co' class", {
+  out <- .viya_sas_highlight("* a line comment; data x; /* a block\ncomment */ run;")
+  expect_true(grepl('<span class="co">* a line comment;</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="co">/* a block', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks quoted strings with the pandoc 'st' class", {
+  out <- .viya_sas_highlight('x = "hello"; y = \'world\';')
+  expect_true(grepl('<span class="st">&quot;hello&quot;</span>', out, fixed = TRUE))
+  expect_true(grepl("<span class=\"st\">'world'</span>", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks macro variables 'va' and macro statements/calls 'fu'", {
+  out <- .viya_sas_highlight("%put &sysdate;")
+  expect_true(grepl('<span class="fu">%put</span>', out, fixed = TRUE))
+  expect_true(grepl('<span class="va">&amp;sysdate</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() marks numeric literals with the pandoc 'dv' class", {
+  out <- .viya_sas_highlight("x = 42;")
+  expect_true(grepl('<span class="dv">42</span>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() HTML-escapes stray angle brackets and ampersands outside of any token", {
+  out <- .viya_sas_highlight("aa < bb & cc > dd;")
+  expect_true(grepl("aa &lt; bb &amp; cc &gt; dd", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_highlight() never leaves a blank line in its output, so pandoc's raw-HTML-block can't end early", {
+  out <- .viya_sas_highlight("data x;\n\nrun;")
+  expect_false(grepl("\n[ \t]*\n", out))
+})
+
 test_that(".viya_sas_engine() resolves the session, submits the code, and renders html output", {
   skip_if_not_installed("knitr")
   h <- .quarto_handle()
@@ -217,7 +278,7 @@ test_that(".viya_sas_engine() resolves the session, submits the code, and render
   out <- .viya_sas_engine(options)
 
   expect_true(grepl("<html>Alfred</html>", out, fixed = TRUE))
-  expect_true(grepl("```sas", out, fixed = TRUE))
+  expect_true(grepl('class="sourceCode sas"', out, fixed = TRUE))
 })
 
 test_that(".viya_sas_engine() honors eval = FALSE and never submits", {

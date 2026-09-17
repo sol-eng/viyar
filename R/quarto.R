@@ -97,6 +97,112 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
     '</iframe>')
 }
 
+# Keyword/statement/procedure lists drawn directly from SAS's own reference
+# documentation (documentation.sas.com): SAS 9.4 Global Statements:
+# Reference; SAS 9.4 DATA Step Statements: Reference; SAS 9.4 Output
+# Delivery System: User's Guide (ODS statements/destinations); SAS Viya
+# Foundation Procedures; Base SAS 9.4 Procedures Guide, Seventh Edition;
+# Base SAS 9.4 Procedures Guide: Statistical Procedures; SAS 9.4 SQL
+# Procedure User's Guide -- not guessed. This is a lexical highlighter, not
+# a parser: tokens are recognized by identity, not grammatical position (a
+# variable coincidentally named `sort` would be colored like the SORT
+# procedure). The documented global statement `X` (shells out to the OS)
+# is deliberately left out for the same reason: a single-letter keyword
+# would highlight nearly every one-character variable name in ordinary
+# code.
+.viya_sas_keywords <- c(
+  "DATA", "RUN", "QUIT", "PROC", "LIBNAME", "FILENAME", "OPTIONS", "TITLE",
+  "FOOTNOTE", "ENDSAS", "CATNAME", "DM", "LOCK", "LOCKDOWN", "MISSING",
+  "PAGE", "RESETLINE", "SASFILE", "SKIP", "SYSECHO",
+  "ARRAY", "ATTRIB", "BY", "CALL", "CARDS", "CARDS4", "DATALINES",
+  "DATALINES4", "DELETE", "DESCRIBE", "DISPLAY", "DROP", "ERROR", "EXECUTE",
+  "FILE", "FORMAT", "INFILE", "INFORMAT", "INPUT", "KEEP", "LABEL",
+  "LENGTH", "LIST", "LOSTCARD", "MERGE", "MODIFY", "OUTPUT", "PUT",
+  "PUTLOG", "REDIRECT", "REMOVE", "RENAME", "REPLACE", "RETAIN", "SET",
+  "UPDATE", "WHERE", "WINDOW",
+  "ODS", "CLOSE", "EXCLUDE", "TRACE", "RESULTS", "SHOW", "VERIFY",
+  "USEGOPT", "PATH", "PREFERENCES", "GRAPHICS", "ESCAPECHAR", "PROCLABEL",
+  "PROCTITLE", "PACKAGE")
+
+.viya_sas_control_flow <- c(
+  "IF", "THEN", "ELSE", "DO", "END", "WHEN", "OTHERWISE", "SELECT", "GOTO",
+  "LINK", "RETURN", "STOP", "ABORT", "CONTINUE", "LEAVE")
+
+.viya_sas_procs <- c(
+  "MEANS", "PRINT", "SORT", "SQL", "FREQ", "UNIVARIATE", "CORR", "REPORT",
+  "SUMMARY", "TABULATE", "TRANSPOSE", "APPEND", "CONTENTS", "COPY", "CPORT",
+  "CIMPORT", "DATASETS", "EXPORT", "IMPORT", "FCMP", "FONTREG", "HADOOP",
+  "HDMD", "HTTP", "JSON", "LUA", "MIGRATE", "PRINTTO", "PROTO", "PWENCODE",
+  "QDEVICE", "SOAP", "SQOOP", "STREAM", "XSL", "AUTHLIB", "DS2", "DSTODS2",
+  "FEDSQL", "S3", "SCOREACCEL", "CASUTIL",
+  "HTML", "HTML5", "HTML3", "LISTING", "PDF", "RTF", "EXCEL", "POWERPOINT",
+  "EPUB", "EPUB2", "EPUB3", "PCL", "PS", "PHTML", "CHTML", "CSVALL",
+  "MARKUP", "PRINTER", "DOCUMENT")
+
+.viya_html_escape <- function(x) {
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  x <- gsub(">", "&gt;", x, fixed = TRUE)
+  gsub('"', "&quot;", x, fixed = TRUE)
+}
+
+# Tokenizes SAS source and wraps each token in the pandoc-standard
+# highlighting span classes (kw/cf/ot/co/st/va/fu/dv) that Quarto's HTML
+# theme already themes generically via plain `code span.kw { color: ... }`
+# rules -- not scoped to a specific language. Reusing those gives real,
+# colored highlighting without a Kate or TextMate syntax file and without
+# a document-level `syntax-definitions` YAML entry, which SAS has neither
+# of in pandoc/skylighting (VS Code/Positron's own SAS extension is a
+# TextMate grammar, a different, incompatible format skylighting can't
+# load). Newlines are encoded as `&#10;` for the same reason as
+# .viya_html_iframe(): this text is parsed as CommonMark before a browser
+# ever sees it, and pandoc's raw-HTML-block rule ends a block at the first
+# blank line -- real SAS code routinely has blank lines between steps.
+.viya_sas_highlight <- function(code) {
+  kw <- paste0("(?i:\\b(?:", paste(.viya_sas_keywords, collapse = "|"), ")\\b)")
+  cf <- paste0("(?i:\\b(?:", paste(.viya_sas_control_flow, collapse = "|"), ")\\b)")
+  ot <- paste0("(?i:\\b(?:", paste(.viya_sas_procs, collapse = "|"), ")\\b)")
+
+  pattern <- paste(
+    "(?s:/\\*.*?\\*/)",        # block comment
+    "(?ms:^[ \\t]*\\*.*?;)",   # line comment (a `* ... ;` statement)
+    '"(?:[^"]|"")*"',          # double-quoted string ("" is an escaped quote)
+    "'(?:[^']|'')*'",          # single-quoted string ('' is an escaped quote)
+    "&[A-Za-z_]\\w*\\.?",      # macro variable reference
+    "%[A-Za-z_]\\w*",          # macro statement or macro call
+    "\\b\\d+(?:\\.\\d+)?\\b",  # numeric literal
+    kw, cf, ot,
+    sep = "|")
+
+  m <- gregexpr(pattern, code, perl = TRUE)[[1]]
+  if (m[1] == -1L) return(gsub("\r\n|\r|\n", "&#10;", .viya_html_escape(code)))
+
+  lens <- attr(m, "match.length")
+  cls_for <- function(token) {
+    if (startsWith(token, "/*") || startsWith(token, "*")) "co"
+    else if (startsWith(token, '"') || startsWith(token, "'")) "st"
+    else if (startsWith(token, "&")) "va"
+    else if (startsWith(token, "%")) "fu"
+    else if (grepl("^[0-9]", token)) "dv"
+    else if (toupper(token) %in% .viya_sas_control_flow) "cf"
+    else if (toupper(token) %in% .viya_sas_procs) "ot"
+    else "kw"
+  }
+
+  out <- character(0)
+  pos <- 1L
+  for (i in seq_along(m)) {
+    start <- m[i]; len <- lens[i]
+    if (start > pos) out <- c(out, .viya_html_escape(substr(code, pos, start - 1L)))
+    token <- substr(code, start, start + len - 1L)
+    out <- c(out, paste0('<span class="', cls_for(token), '">',
+                          .viya_html_escape(token), '</span>'))
+    pos <- start + len
+  }
+  if (pos <= nchar(code)) out <- c(out, .viya_html_escape(substr(code, pos, nchar(code))))
+  gsub("\r\n|\r|\n", "&#10;", paste(out, collapse = ""))
+}
+
 # Builds the whole chunk output (code echo + log/listing + isolated ODS
 # html) as one markdown/HTML string, returned via knitr::asis_output() so
 # it is spliced in verbatim regardless of the chunk's own `results`
@@ -106,7 +212,10 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
 .viya_sas_render <- function(options, code, result) {
   parts <- character(0)
   if (!identical(options$echo, FALSE))
-    parts <- c(parts, paste0("```sas\n", code, "\n```"))
+    parts <- c(parts, paste0(
+      '<div class="sourceCode"><pre class="sourceCode sas">',
+      '<code class="sourceCode sas">', .viya_sas_highlight(code),
+      '</code></pre></div>'))
   if (!is.null(result$log) && length(result$log))
     parts <- c(parts, paste0("```\n", paste(result$log, collapse = "\n"), "\n```"))
   if (!is.null(result$listing) && length(result$listing))
