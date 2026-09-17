@@ -1,0 +1,118 @@
+---
+title: "viyar: the {sas} Quarto chunk engine"
+subtitle: "Submitting SAS code from a Quarto document"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+editor: visual
+---
+
+## What this notebook shows
+
+`viyar` registers a knitr chunk engine named `sas` when the package
+loads (as long as `knitr` is installed). Any ```{sas}``` block in a
+Quarto document is then submitted to a Viya compute session you've
+already started -- the engine never starts or ends a session itself,
+matching how R chunks share one implicit R process throughout a
+document.
+
+## Setup
+
+Start the session exactly as you would for any other `viyar` workflow --
+see `viyar-workflow-demo.qmd` for the full authentication walkthrough
+(Workbench managed OAuth vs. `viya_login()` for local desktop R/Positron
+Desktop). Nothing about authentication changes for the `{sas}` engine.
+
+```{r}
+#| label: setup
+#| eval: false
+
+library(viyar)
+h <- viya_session()
+```
+
+## A basic `{sas}` chunk
+
+By default, `viya.output` is `"html"` -- your SAS code's own `ods html5`
+output (opened with no `file=`, per `viya_submit()`'s existing
+convention) is rendered directly into the document, with no log shown.
+This is deliberately a clean-report default, not a debugging default.
+
+```{sas}
+#| session: h
+#| eval: false
+
+ods html5;
+proc means data=sashelp.class;
+run;
+ods html5 close;
+```
+
+## Showing the log or the traditional listing instead
+
+Set `viya.output` to any combination of `"log"`, `"listing"`, `"html"`.
+`viya.output: "listing"` is also the documented alternative for
+non-HTML Quarto targets (PDF/Typst/docx), where raw ODS HTML can't
+render.
+
+```{sas}
+#| session: h
+#| viya.output: ["log", "listing"]
+#| eval: false
+
+ods listing;
+proc print data=sashelp.class(obs=5);
+run;
+ods listing close;
+```
+
+## Hiding the SAS source
+
+Standard knitr `echo` applies -- set it to `false` to hide the
+submitted code and show only the requested output.
+
+```{sas}
+#| session: h
+#| echo: false
+#| eval: false
+
+proc means data=sashelp.class;
+run;
+```
+
+## A chunk where a non-`"completed"` state is expected
+
+By default, any job state other than `"completed"` stops the render
+(fail-fast) -- appropriate for a submission pipeline, where an
+unnoticed downstream error is worse than a stopped build. Set
+`viya.error: true` to suppress that for a specific chunk instead.
+
+```{sas}
+#| session: h
+#| viya.error: true
+#| eval: false
+
+%put NOTE: this chunk demonstrates viya.error, not a real failure;
+```
+
+## Chunk option reference
+
+| Option | Default | Meaning |
+|---|---|---|
+| `session` | *(required)* | R symbol naming the `viyar` handle, e.g. `h` |
+| `viya.output` | `"html"` | one or more of `"log"`, `"listing"`, `"html"` |
+| `viya.error` | `false` | suppress the fail-fast throw for this chunk |
+| `echo` | `true` | show the submitted SAS source (standard knitr option) |
+| `viya.poll_s` | `1` | polling interval in seconds |
+| `viya.timeout_s` | `300` | give up after this many seconds |
+
+## Clean up
+
+```{r}
+#| label: cleanup
+#| eval: false
+
+viya_end(h)
+```
