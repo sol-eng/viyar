@@ -67,11 +67,31 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
   h
 }
 
-# Builds the whole chunk output (code echo + log/listing + raw ODS html)
-# as one markdown/HTML string, returned via knitr::asis_output() so it is
-# spliced in verbatim regardless of the chunk's own `results` option --
-# the formatting decisions here (fencing, raw HTML) are made once, by
-# this function, not deferred to knitr's own results-handling rules.
+# ODS HTML5 output is a complete standalone document, with its own
+# <head><style> block -- SAS's default template centers title/heading
+# elements via broad, unscoped selectors. Splicing that verbatim into a
+# Quarto page lets its <style> block leak into the surrounding page (any
+# <style> tag found anywhere in a parsed HTML document applies page-wide),
+# overriding Quarto's own section-heading alignment. An iframe's srcdoc
+# gives the ODS document its own DOM, scoping its CSS to itself; the
+# onload handler grows the iframe to fit its content instead of clipping
+# it at a guessed fixed height.
+.viya_html_iframe <- function(html) {
+  escaped <- gsub("&", "&amp;", html, fixed = TRUE)
+  escaped <- gsub('"', "&quot;", escaped, fixed = TRUE)
+  paste0(
+    '<iframe srcdoc="', escaped, '" ',
+    'style="width:100%; border:none;" ',
+    'onload="this.style.height=this.contentWindow.document.documentElement.scrollHeight+\'px\';">',
+    '</iframe>')
+}
+
+# Builds the whole chunk output (code echo + log/listing + isolated ODS
+# html) as one markdown/HTML string, returned via knitr::asis_output() so
+# it is spliced in verbatim regardless of the chunk's own `results`
+# option -- the formatting decisions here (fencing, iframe isolation) are
+# made once, by this function, not deferred to knitr's own
+# results-handling rules.
 .viya_sas_render <- function(options, code, result) {
   parts <- character(0)
   if (!identical(options$echo, FALSE))
@@ -81,7 +101,7 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
   if (!is.null(result$listing) && length(result$listing))
     parts <- c(parts, paste0("```\n", paste(result$listing, collapse = "\n"), "\n```"))
   if (!is.null(result$html) && length(result$html))
-    parts <- c(parts, unname(result$html))
+    parts <- c(parts, vapply(unname(result$html), .viya_html_iframe, character(1)))
   knitr::asis_output(paste(parts, collapse = "\n\n"))
 }
 

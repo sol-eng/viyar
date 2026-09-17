@@ -147,6 +147,35 @@ test_that(".viya_sas_render() emits html output raw, without fencing", {
   expect_false(grepl("```", out, fixed = TRUE))
 })
 
+test_that(".viya_sas_render() isolates ODS html output in an iframe so its own <style> block can't leak into the surrounding page", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = FALSE), "ods html5; proc means; run;", list(
+    state = "completed",
+    html = c(Print = "<html><head><style>H1 { text-align: center; }</style></head><body><p>hi</p></body></html>")))
+
+  expect_true(grepl('<iframe[^>]+srcdoc="', out))
+  expect_true(grepl("H1 { text-align: center; }", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() escapes a double quote in ODS html so it can't break out of the iframe's srcdoc attribute", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = FALSE), "ods html5; proc means; run;", list(
+    state = "completed",
+    html = c(Print = '<p class="a">hi</p>')))
+
+  expect_true(grepl('<p class=&quot;a&quot;>hi</p>', out, fixed = TRUE))
+  expect_false(grepl('<p class="a">hi</p>', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() escapes a literal ampersand in ODS html for correct round-tripping through the srcdoc attribute", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_render(list(echo = FALSE), "ods html5; proc means; run;", list(
+    state = "completed",
+    html = c(Print = "<p>A &amp; B</p>")))
+
+  expect_true(grepl("<p>A &amp;amp; B</p>", out, fixed = TRUE))
+})
+
 test_that(".viya_sas_engine() resolves the session, submits the code, and renders html output", {
   skip_if_not_installed("knitr")
   h <- .quarto_handle()
