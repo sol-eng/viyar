@@ -176,6 +176,26 @@ test_that(".viya_sas_render() escapes a literal ampersand in ODS html for correc
   expect_true(grepl("<p>A &amp;amp; B</p>", out, fixed = TRUE))
 })
 
+test_that(".viya_sas_render() keeps the emitted iframe tag on one physical line so a blank line inside real ODS html can't end pandoc's raw-HTML-block early", {
+  skip_if_not_installed("knitr")
+  # Real ODS HTML5 output is blank-line-heavy. asis_output() text is parsed
+  # by pandoc as CommonMark, whose raw-HTML-block rule ends a block at the
+  # first blank line -- even one sitting inside our srcdoc attribute value,
+  # where a browser wouldn't care. If a blank line survives inside the
+  # emitted <iframe> tag, pandoc truncates the block there and splices
+  # everything after it into the surrounding page as loose HTML/text --
+  # exactly the leak this feature exists to prevent.
+  ods_with_blank_line <- paste0(
+    "<html><head>\n<style>\n.c { text-align: center }\n</style></head>\n",
+    "\n<body><p>hi</p></body></html>")
+
+  out <- .viya_sas_render(list(echo = FALSE), "ods html5; proc means; run;",
+                          list(state = "completed", html = c(Print = ods_with_blank_line)))
+
+  iframe_tag <- regmatches(out, regexpr("<iframe.*</iframe>", out))
+  expect_false(grepl("\n[ \t]*\n", iframe_tag))
+})
+
 test_that(".viya_sas_engine() resolves the session, submits the code, and renders html output", {
   skip_if_not_installed("knitr")
   h <- .quarto_handle()

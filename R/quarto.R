@@ -76,9 +76,20 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
 # gives the ODS document its own DOM, scoping its CSS to itself; the
 # onload handler grows the iframe to fit its content instead of clipping
 # it at a guessed fixed height.
+#
+# The asis_output() text this feeds into is parsed as CommonMark before it
+# ever reaches a browser -- pandoc's raw-HTML-block rule ends a block at
+# the first blank line, even one sitting inside a quoted attribute value
+# where an actual HTML parser wouldn't care. Real ODS output is blank-line
+# -heavy, so a raw newline left in the srcdoc value truncates the <iframe>
+# block partway through and spills the rest of the ODS document into the
+# surrounding page as loose HTML -- the exact leak this function exists to
+# prevent. Encoding newlines keeps the whole tag on one physical line, so
+# pandoc can never see a blank line inside it.
 .viya_html_iframe <- function(html) {
   escaped <- gsub("&", "&amp;", html, fixed = TRUE)
   escaped <- gsub('"', "&quot;", escaped, fixed = TRUE)
+  escaped <- gsub("\r\n|\r|\n", "&#10;", escaped)
   paste0(
     '<iframe srcdoc="', escaped, '" ',
     'style="width:100%; border:none;" ',
