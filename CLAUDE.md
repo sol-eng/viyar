@@ -117,6 +117,47 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   instead of erroring). Neither this API nor the Folders API supports
   recursive/nested creation -- `viya_create_folder()`/`viya_fs_mkdir()`
   both walk the path themselves, creating one missing segment at a time.
+- `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
+  `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
+  always fetches the log internally for diagnosis, defaults `output` to
+  `"html"` instead of `"log"`, and raises an R error on any
+  non-`"completed"` job state unless `error = TRUE`) and the engine
+  internals it's built on -- `.viya_resolve_session()` (a chunk's
+  `session` option, resolved the same way knitr's own `sql` engine
+  resolves `connection`: a bare name is looked up in
+  `knitr::knit_global()`, an already-resolved handle is passed through
+  as-is), `.viya_sas_render()` (assembles code echo + log/listing
+  fenced blocks + ODS HTML into one `knitr::asis_output()` string,
+  bypassing the chunk's own `results` option entirely since formatting
+  is fully decided here), and `.viya_html_iframe()` (wraps each ODS HTML
+  result in an `<iframe srcdoc="...">` before splicing it in). ODS
+  HTML5 output is a full standalone document with its own
+  `<head><style>` block -- SAS's default template centers title/heading
+  elements via broad, unscoped selectors (`H1`, etc, not a namespaced
+  class) -- so splicing it in raw let that `<style>` block leak into
+  the surrounding page (any `<style>` tag anywhere in a parsed HTML
+  document applies page-wide) and re-center every Quarto section
+  heading, not just the SAS output (found live rendering a mixed R/SAS
+  document). The iframe gives ODS's markup its own document, scoping
+  its CSS to itself; an `onload` handler grows the iframe to fit its
+  content since ODS output height isn't known ahead of render.
+  `.viya_html_iframe()` escapes `&` before `"` (in that order --
+  reversed, `&quot;`'s own `&` would get double-escaped) so the
+  original HTML round-trips exactly through the `srcdoc` attribute's
+  one level of entity decoding. The compute session itself is never started
+  or ended automatically -- a document's setup chunk calls
+  `viya_session()`/`viya_end()` exactly as it does today; the engine
+  only ever consumes a handle the user already made. Chunk options are
+  namespaced `viya.*` (`viya.output`, `viya.error`, `viya.poll_s`,
+  `viya.timeout_s`) to avoid colliding with knitr/Quarto's own `output`
+  chunk option. See
+  `docs/superpowers/specs/2026-09-16-quarto-sas-engine-design.md` for
+  the full design rationale, including why the sticky session-wide
+  error state (see "Known gaps / follow-ups" below) is neutralized
+  rather than worked around by this engine's fail-fast default.
+- `R/zzz.R` — `.onLoad()` registers the `sas` engine
+  (`knitr::knit_engines$set(sas = .viya_sas_engine)`) only if `knitr`
+  is installed (a `Suggests`, not a hard dependency).
 
 ## The `viyar` S3 handle
 
