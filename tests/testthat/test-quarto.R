@@ -164,3 +164,8 @@ test_that(".viya_sas_engine() resolves the session, submits the code, and render
   expect_true(grepl("<html>Alfred</html>", out, fixed = TRUE))
   expect_true(grepl("```sas", out, fixed = TRUE))
 })
+
+test_that("the sas knitr engine is registered when the package loads and knitr is available", {
+  skip_if_not_installed("knitr")
+  expect_true(is.function(knitr::knit_engines$get("sas")))
+})
