@@ -209,13 +209,30 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
 # option -- the formatting decisions here (fencing, iframe isolation) are
 # made once, by this function, not deferred to knitr's own
 # results-handling rules.
+#
+# The highlighted sourceCode block is raw HTML -- pandoc only passes raw
+# HTML blocks through for an HTML-family writer; for any other target
+# (confirmed live: latex, i.e. a PDF render) it silently drops them
+# entirely, not just their styling, so the whole code echo would vanish
+# from a PDF/docx/Typst render. knitr::pandoc_to() (backed by quarto's own
+# `rmarkdown.pandoc.to` knit option, confirmed empirically to read "html"
+# for an HTML target and "latex" for PDF) gates that raw HTML behind an
+# actual HTML target and falls back to a plain fenced code block
+# otherwise -- unstyled, but it survives every pandoc writer. The same
+# fallback applies when the target is unknown (i.e. not running inside an
+# actual pandoc render at all), since raw HTML is only safe to emit once
+# an HTML target is confirmed, not assumed.
 .viya_sas_render <- function(options, code, result) {
   parts <- character(0)
   if (!identical(options$echo, FALSE))
-    parts <- c(parts, paste0(
-      '<div class="sourceCode"><pre class="sourceCode sas">',
-      '<code class="sourceCode sas">', .viya_sas_highlight(code),
-      '</code></pre></div>'))
+    parts <- c(parts, if (identical(knitr::pandoc_to(), "html")) {
+      paste0(
+        '<div class="sourceCode"><pre class="sourceCode sas">',
+        '<code class="sourceCode sas">', .viya_sas_highlight(code),
+        '</code></pre></div>')
+    } else {
+      paste0("```sas\n", code, "\n```")
+    })
   if (!is.null(result$log) && length(result$log))
     parts <- c(parts, paste0("```\n", paste(result$log, collapse = "\n"), "\n```"))
   if (!is.null(result$listing) && length(result$listing))

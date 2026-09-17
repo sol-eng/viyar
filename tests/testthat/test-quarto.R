@@ -120,15 +120,39 @@ test_that(".viya_resolve_session() gives a clear error when the named object doe
               "does not name any object")
 })
 
-test_that(".viya_sas_render() echoes the code as a highlighted sourceCode block and shows the log as a fenced block by default", {
+.with_pandoc_to <- function(to, expr) {
+  old <- knitr::opts_knit$get("rmarkdown.pandoc.to")
+  knitr::opts_knit$set(rmarkdown.pandoc.to = to)
+  on.exit(knitr::opts_knit$set(rmarkdown.pandoc.to = old), add = TRUE)
+  force(expr)
+}
+
+test_that(".viya_sas_render() echoes the code as a highlighted sourceCode block and shows the log as a fenced block by default, for an HTML target", {
   skip_if_not_installed("knitr")
-  out <- .viya_sas_render(list(echo = TRUE), "proc means; run;",
-                          list(state = "completed", log = c("NOTE: done")))
+  out <- .with_pandoc_to("html", .viya_sas_render(list(echo = TRUE), "proc means; run;",
+                          list(state = "completed", log = c("NOTE: done"))))
 
   expect_s3_class(out, "knit_asis")
   expect_true(grepl('<pre class="sourceCode sas">', out, fixed = TRUE))
   expect_true(grepl('<span class="kw">proc</span>', out, fixed = TRUE))
   expect_true(grepl("NOTE: done", out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() falls back to a plain fenced code block for a non-HTML target, since raw HTML is silently dropped by pandoc's non-HTML writers", {
+  skip_if_not_installed("knitr")
+  out <- .with_pandoc_to("latex", .viya_sas_render(list(echo = TRUE), "proc means; run;",
+                          list(state = "completed")))
+
+  expect_true(grepl("```sas\nproc means; run;\n```", out, fixed = TRUE))
+  expect_false(grepl('class="sourceCode sas"', out, fixed = TRUE))
+})
+
+test_that(".viya_sas_render() falls back to the same plain fenced code block when the target is unknown (not running inside an actual pandoc render)", {
+  skip_if_not_installed("knitr")
+  out <- .with_pandoc_to(NULL, .viya_sas_render(list(echo = TRUE), "proc means; run;",
+                          list(state = "completed")))
+
+  expect_true(grepl("```sas\nproc means; run;\n```", out, fixed = TRUE))
 })
 
 test_that(".viya_sas_render() omits the code block when echo is FALSE", {
@@ -275,7 +299,7 @@ test_that(".viya_sas_engine() resolves the session, submits the code, and render
                   code = c("ods html5;", "proc print data=sashelp.class; run;"),
                   echo = TRUE, viya.output = "html")
 
-  out <- .viya_sas_engine(options)
+  out <- .with_pandoc_to("html", .viya_sas_engine(options))
 
   expect_true(grepl("<html>Alfred</html>", out, fixed = TRUE))
   expect_true(grepl('class="sourceCode sas"', out, fixed = TRUE))
