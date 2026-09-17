@@ -114,6 +114,12 @@ test_that(".viya_resolve_session() errors clearly when the name isn't a viyar ha
               "does not resolve to a viyar handle")
 })
 
+test_that(".viya_resolve_session() gives a clear error when the named object doesn't exist", {
+  skip_if_not_installed("knitr")
+  expect_error(.viya_resolve_session("definitely_not_bound_anywhere"),
+              "does not name any object")
+})
+
 test_that(".viya_sas_render() echoes the code and shows the log as a fenced block by default", {
   skip_if_not_installed("knitr")
   out <- .viya_sas_render(list(echo = TRUE), "proc means; run;",
@@ -165,7 +171,14 @@ test_that(".viya_sas_engine() resolves the session, submits the code, and render
   expect_true(grepl("```sas", out, fixed = TRUE))
 })
 
+test_that(".viya_sas_engine() honors eval = FALSE and never submits", {
+  skip_if_not_installed("knitr")
+  out <- .viya_sas_engine(list(eval = FALSE, code = "proc means; run;",
+                               echo = TRUE, engine = "sas"))
+  expect_true(grepl("proc means; run;", out, fixed = TRUE))
+})
+
 test_that("the sas knitr engine is registered when the package loads and knitr is available", {
   skip_if_not_installed("knitr")
-  expect_true(is.function(knitr::knit_engines$get("sas")))
+  expect_identical(knitr::knit_engines$get("sas"), .viya_sas_engine)
 })

@@ -12,11 +12,13 @@ editor: visual
 ## What this notebook shows
 
 `viyar` registers a knitr chunk engine named `sas` when the package
-loads (as long as `knitr` is installed). Any ```{sas}``` block in a
-Quarto document is then submitted to a Viya compute session you've
-already started -- the engine never starts or ends a session itself,
-matching how R chunks share one implicit R process throughout a
-document.
+loads (as long as `knitr` is installed) -- this replaces knitr's own
+built-in `sas` engine (which shells out to a local SAS installation),
+so a `{sas}` chunk always submits to Viya once `viyar` is loaded. Any
+`{sas}` block in a Quarto document is then submitted to a Viya compute
+session you've already started -- the engine never starts or ends a
+session itself, matching how R chunks share one implicit R process
+throughout a document.
 
 ## Setup
 

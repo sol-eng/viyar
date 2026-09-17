@@ -55,9 +55,12 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
     stop("The `sas` engine requires a `session` chunk option naming (or ",
          "providing) a viyar handle, e.g. `#| session: h` (see viya_session()).",
          call. = FALSE)
-  h <- if (is.character(session) && length(session) == 1L)
+  h <- if (is.character(session) && length(session) == 1L) {
+    if (!exists(session, envir = knitr::knit_global()))
+      stop("`session: ", session, "` does not name any object in the knit ",
+           "environment -- did the setup chunk run viya_session()?", call. = FALSE)
     get(session, envir = knitr::knit_global())
-  else session
+  } else session
   if (!inherits(h, "viyar"))
     stop("`session` does not resolve to a viyar handle (see viya_session()).",
          call. = FALSE)
@@ -87,6 +90,8 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
 # code lives at options$code, one element per source line) and returns
 # the rendered chunk output.
 .viya_sas_engine <- function(options) {
+  if (isFALSE(options$eval))
+    return(knitr::engine_output(options, options$code, ""))
   h <- .viya_resolve_session(options$session)
   code <- paste(options$code, collapse = "\n")
   result <- viya_submit_quarto(
