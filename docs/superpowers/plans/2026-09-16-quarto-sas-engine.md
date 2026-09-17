@@ -395,7 +395,7 @@ Append to `R/quarto.R`:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `Rscript -e 'pkgload::load_all("."); testthat::test_file("tests/testthat/test-quarto.R")'`
-Expected: PASS (12 tests, 0 failures) — or all non-`knitr` tests pass and the rest skip, if `knitr` isn't installed locally.
+Expected: PASS (13 tests, 0 failures) — or all non-`knitr` tests pass and the rest skip, if `knitr` isn't installed locally.
 
 - [ ] **Step 6: Commit**
 
@@ -458,7 +458,7 @@ Create `R/zzz.R`:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `Rscript -e 'pkgload::load_all("."); testthat::test_file("tests/testthat/test-quarto.R")'`
-Expected: PASS (13 tests, 0 failures).
+Expected: PASS (14 tests, 0 failures).
 
 - [ ] **Step 5: Regenerate NAMESPACE and man pages**
 
