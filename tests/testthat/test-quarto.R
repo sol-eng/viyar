@@ -338,6 +338,25 @@ test_that(".viya_sas_push_inputs() writes each named R data.frame to WORK.<NAME>
   expect_equal(seen[[1]]$df, data.frame(x = 1:2))
 })
 
+test_that(".viya_sas_push_inputs() writes to an explicit libref when sas.input uses a 'libref.name' spec", {
+  h <- .quarto_handle()
+  assign("push_test_df2", data.frame(x = 1), envir = .GlobalEnv)
+  withr::defer(rm("push_test_df2", envir = .GlobalEnv))
+
+  seen <- list()
+  testthat::local_mocked_bindings(
+    viya_write = function(h, df, libref, table, ...) {
+      seen[[length(seen) + 1]] <<- list(libref = libref, table = table)
+      invisible(NULL)
+    })
+
+  .viya_sas_push_inputs(h, "mylib.push_test_df2")
+
+  expect_length(seen, 1)
+  expect_equal(seen[[1]]$libref, "MYLIB")
+  expect_equal(seen[[1]]$table, "push_test_df2")
+})
+
 test_that(".viya_sas_push_inputs() errors clearly when the named object doesn't exist", {
   h <- .quarto_handle()
   expect_error(.viya_sas_push_inputs(h, "definitely_not_bound_anywhere"),
@@ -405,6 +424,37 @@ test_that(".viya_sas_pull_output() leaves max_rows at viya_read()'s own default 
   expect_equal(seen_max_rows, "not set")
 })
 
+test_that(".viya_sas_pull_output() pulls every table in a multi-value sas.output_data, defaulting each var to its own table name", {
+  h <- .quarto_handle()
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(table = table))
+
+  .viya_sas_pull_output(h, c("work.result1", "work.result2"), NULL)
+  withr::defer(rm("result1", "result2", envir = .GlobalEnv))
+
+  expect_equal(get("result1", envir = .GlobalEnv), data.frame(table = "result1"))
+  expect_equal(get("result2", envir = .GlobalEnv), data.frame(table = "result2"))
+})
+
+test_that(".viya_sas_pull_output() matches a multi-value sas.output_var to sas.output_data by position", {
+  h <- .quarto_handle()
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(table = table))
+
+  .viya_sas_pull_output(h, c("work.result1", "work.result2"), c("df_a", "df_b"))
+  withr::defer(rm("df_a", "df_b", envir = .GlobalEnv))
+
+  expect_equal(get("df_a", envir = .GlobalEnv), data.frame(table = "result1"))
+  expect_equal(get("df_b", envir = .GlobalEnv), data.frame(table = "result2"))
+})
+
+test_that(".viya_sas_pull_output() errors clearly when sas.output_var's length doesn't match sas.output_data's", {
+  h <- .quarto_handle()
+  expect_error(
+    .viya_sas_pull_output(h, c("work.result1", "work.result2"), "just_one_name"),
+    "sas.output_var.*sas.output_data", fixed = FALSE)
+})
+
 test_that(".viya_sas_engine() pushes sas.input data frames before submitting the code", {
   skip_if_not_installed("knitr")
   h <- .quarto_handle()
@@ -453,6 +503,31 @@ test_that(".viya_sas_engine() pulls sas.output_data into sas.output_var after th
   withr::defer(rm("pulled_df", envir = .GlobalEnv))
 
   expect_equal(get("pulled_df", envir = .GlobalEnv), data.frame(pulled = TRUE))
+})
+
+test_that(".viya_sas_engine() pulls multiple sas.output_data tables into their matching sas.output_var names", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_multi_pull_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("engine_multi_pull_handle", envir = .GlobalEnv))
+
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(table = table))
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(seen, state = "completed"))
+
+  options <- list(session = "engine_multi_pull_handle",
+                  sas.output_data = c("work.result1", "work.result2"),
+                  sas.output_var = c("multi_a", "multi_b"),
+                  code = "data work.result1 work.result2; x = 1; run;",
+                  echo = FALSE, viya.output = "log")
+
+  .viya_sas_engine(options)
+  withr::defer(rm("multi_a", "multi_b", envir = .GlobalEnv))
+
+  expect_equal(get("multi_a", envir = .GlobalEnv), data.frame(table = "result1"))
+  expect_equal(get("multi_b", envir = .GlobalEnv), data.frame(table = "result2"))
 })
 
 test_that(".viya_sas_engine() threads sas.output_max_rows through to the pull", {

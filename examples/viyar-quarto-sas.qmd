@@ -102,12 +102,13 @@ unnoticed downstream error is worse than a stopped build. Set
 ## Mixing R and SAS data in one document
 
 `{sas}` chunks share the document's R environment the same way they
-share `h`: name an R data.frame in `sas.input` and it's written to
-`WORK.<name>` (via [viya_write()]) before the chunk's own code runs;
-name a SAS dataset in `sas.output_data` and it's read back (via
-[viya_read()]) into an R variable named by `sas.output_var` right after
-the code finishes -- so a *later* `{r}` chunk can reference it by name,
-exactly like a later `{sas}` chunk already can with `session: h`.
+share `h`: name an R data.frame in `sas.input` and it's written to SAS
+(via [viya_write()]) before the chunk's own code runs; name a SAS
+dataset in `sas.output_data` and it's read back (via [viya_read()])
+into an R variable named by `sas.output_var` right after the code
+finishes -- so a *later* `{r}` chunk can reference it by name, exactly
+like a later `{sas}` chunk already can with `session: h`. Both options
+take one or more values.
 
 ```{r}
 #| label: mtcars-setup
@@ -115,6 +116,11 @@ exactly like a later `{sas}` chunk already can with `session: h`.
 
 mtcars_r <- mtcars
 ```
+
+By default `sas.input` lands in `WORK.<name>` (matching [viya_write()]'s
+own default), and `sas.output_var` defaults to each table's own name --
+give it a `"libref.name"` spec instead to land somewhere else, e.g.
+`sas.input: "mylib.mtcars_r"` writes to `MYLIB.MTCARS_R`.
 
 ```{sas}
 *| session: h;
@@ -137,14 +143,34 @@ run;
 nrow(mtcars_heavy)
 ```
 
-The pull is skipped (with nothing assigned) if the chunk's job doesn't
-reach a `"completed"` state -- including when `viya.error: true`
-suppresses the fail-fast throw for an intentionally-failing chunk, since
-the named output dataset was likely never created. `viya_read()`'s own
-`max_rows` safety cap (100000 rows, a client-side guard against pulling
-an entire CAS-sized table into memory, not a REST limit) still applies
-to the pull; override it per chunk with `sas.output_max_rows` if you
-know the result is larger and safe to pull in full.
+Multiple inputs/outputs are just longer vectors -- `sas.output_var`, if
+given at all, must have exactly as many names as `sas.output_data` has
+tables (matched by position); errors rather than silently mismatching or
+dropping extras otherwise.
+
+```{sas}
+*| session: h;
+*| sas.output_data: ["work.mtcars_heavy", "work.mtcars_light"];
+*| sas.output_var: ["heavy_r", "light_r"];
+*| echo: false;
+*| eval: false;
+
+data work.mtcars_heavy work.mtcars_light;
+  set work.mtcars_r;
+  if wt > 3 then output work.mtcars_heavy;
+  else output work.mtcars_light;
+run;
+```
+
+The pull is skipped entirely (nothing assigned, for any of the tables in
+a multi-output pull) if the chunk's job doesn't reach a `"completed"`
+state -- including when `viya.error: true` suppresses the fail-fast
+throw for an intentionally-failing chunk, since the named output
+dataset(s) were likely never created. `viya_read()`'s own `max_rows`
+safety cap (100000 rows, a client-side guard against pulling an entire
+CAS-sized table into memory, not a REST limit) still applies to every
+table in the pull; override it per chunk with `sas.output_max_rows` if
+you know the result is larger and safe to pull in full.
 
 ## Chunk option reference
 
@@ -156,10 +182,10 @@ know the result is larger and safe to pull in full.
 | `echo` | `true` | show the submitted SAS source (standard knitr option) |
 | `viya.poll_s` | `1` | polling interval in seconds |
 | `viya.timeout_s` | `300` | give up after this many seconds |
-| `sas.input` | *(none)* | R data.frame name(s) to write to `WORK.<name>` before the code runs |
-| `sas.output_data` | *(none)* | SAS `libref.table` (libref defaults to `work`) to read back after the code runs |
-| `sas.output_var` | table name | R variable name to assign the pulled data.frame to |
-| `sas.output_max_rows` | `100000` | override `viya_read()`'s row cap for this pull |
+| `sas.input` | *(none)* | R data.frame name(s), each a bare name (-> `WORK.<name>`) or `"libref.name"` |
+| `sas.output_data` | *(none)* | SAS `"libref.table"` name(s) (libref defaults to `work`) to read back after the code runs |
+| `sas.output_var` | each table's own name | R variable name(s) for the pulled data.frame(s), matched to `sas.output_data` by position |
+| `sas.output_max_rows` | `100000` | override `viya_read()`'s row cap for this pull (applies to every table pulled) |
 
 ## Clean up
 

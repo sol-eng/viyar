@@ -242,48 +242,66 @@ viya_submit_quarto <- function(h, code, output = "html", poll_s = 1,
   knitr::asis_output(paste(parts, collapse = "\n\n"))
 }
 
-# Pushes each named R data.frame (resolved in knitr::knit_global(), the
-# same way .viya_resolve_session() resolves `session`) into SAS as
-# WORK.<name> before the chunk's own code runs, so that code can reference
-# it directly (e.g. `proc print data=work.mydata; run;`). Errors mirror
-# .viya_resolve_session()'s wording for the same two failure modes (an
-# unbound name, or an object of the wrong type), so both chunk options
-# fail the same recognizable way.
-.viya_sas_push_inputs <- function(h, input) {
-  for (name in input) {
-    if (!exists(name, envir = knitr::knit_global()))
-      stop("`sas.input: ", name, "` does not name any object in the knit ",
-           "environment.", call. = FALSE)
-    df <- get(name, envir = knitr::knit_global())
-    if (!is.data.frame(df))
-      stop("`sas.input: ", name, "` does not resolve to a data.frame (see ",
-           "viya_write()).", call. = FALSE)
-    viya_write(h, df, "WORK", name)
-  }
-}
-
-# "libref.table" -> list(libref, table); a bare table name defaults its
+# "libref.name" -> list(libref, table/name); a bare name defaults its
 # libref to "work", the same default viya_write() itself writes to.
+# Shared by both sas.input (where the second part is also the R object
+# name to look up) and sas.output_data (where it's the SAS table name).
 .viya_sas_parse_libref_table <- function(spec) {
   parts <- strsplit(spec, ".", fixed = TRUE)[[1]]
   if (length(parts) < 2L) list(libref = "work", table = parts[1])
   else list(libref = parts[1], table = paste(parts[-1], collapse = "."))
 }
 
-# Reads a SAS dataset back into an R data.frame after the chunk's code
-# runs, and assigns it into knitr::knit_global() under `var` (defaulting
-# to the table's own name) -- the mirror image of .viya_sas_push_inputs(),
-# so a *later* chunk can reference the result by name exactly like it
-# already does for `session`. `max_rows` is left unset (viya_read()'s own
-# 100000-row safety default applies) unless the chunk overrides it via
-# `sas.output_max_rows` -- see viya_read()'s own docs for why that cap
-# exists: it's a client-side guard against pulling an entire CAS-sized
-# table into memory, not a REST pagination limit.
+# Pushes each named R data.frame (resolved in knitr::knit_global(), the
+# same way .viya_resolve_session() resolves `session`) into SAS before the
+# chunk's own code runs, so that code can reference it directly (e.g.
+# `proc print data=work.mydata; run;`). Each entry is a bare R object name
+# (written to WORK.<name>) or a "libref.name" spec to land it somewhere
+# else (e.g. "mylib.mydata" -> MYLIB.MYDATA), reusing the exact same
+# "libref.name" parsing sas.output_data uses on the way back out. Errors
+# mirror .viya_resolve_session()'s wording for the same two failure modes
+# (an unbound name, or an object of the wrong type), so both chunk options
+# fail the same recognizable way.
+.viya_sas_push_inputs <- function(h, input) {
+  for (spec in input) {
+    lt <- .viya_sas_parse_libref_table(spec)
+    name <- lt$table
+    if (!exists(name, envir = knitr::knit_global()))
+      stop("`sas.input: ", spec, "` does not name any object in the knit ",
+           "environment.", call. = FALSE)
+    df <- get(name, envir = knitr::knit_global())
+    if (!is.data.frame(df))
+      stop("`sas.input: ", spec, "` does not resolve to a data.frame (see ",
+           "viya_write()).", call. = FALSE)
+    viya_write(h, df, toupper(lt$libref), name)
+  }
+}
+
+# Reads one or more SAS datasets back into R data.frames after the
+# chunk's code runs, and assigns each into knitr::knit_global() -- the
+# mirror image of .viya_sas_push_inputs(), so a *later* chunk can
+# reference the result(s) by name exactly like it already does for
+# `session`. `var` supplies the assigned name for each entry of
+# `output_data` by position (defaulting to that entry's own table name
+# when `var` is NULL entirely); a non-NULL `var` of a different length
+# than `output_data` is rejected rather than silently mismatched or
+# truncated. `max_rows` is left unset (viya_read()'s own 100000-row
+# safety default applies, uniformly across every table in this pull)
+# unless the chunk overrides it via `sas.output_max_rows` -- see
+# viya_read()'s own docs for why that cap exists: it's a client-side
+# guard against pulling an entire CAS-sized table into memory, not a REST
+# pagination limit.
 .viya_sas_pull_output <- function(h, output_data, var, max_rows = NULL) {
-  lt <- .viya_sas_parse_libref_table(output_data)
-  df <- if (is.null(max_rows)) viya_read(h, lt$libref, lt$table)
-        else viya_read(h, lt$libref, lt$table, max_rows = max_rows)
-  assign(var %||% lt$table, df, envir = knitr::knit_global())
+  if (!is.null(var) && length(var) != length(output_data))
+    stop("`sas.output_var` must be the same length as `sas.output_data` ",
+         "(or omitted entirely) -- got ", length(var), " name(s) for ",
+         length(output_data), " table(s).", call. = FALSE)
+  for (i in seq_along(output_data)) {
+    lt <- .viya_sas_parse_libref_table(output_data[i])
+    df <- if (is.null(max_rows)) viya_read(h, lt$libref, lt$table)
+          else viya_read(h, lt$libref, lt$table, max_rows = max_rows)
+    assign(if (is.null(var)) lt$table else var[i], df, envir = knitr::knit_global())
+  }
 }
 
 # The knit_engines$set(sas = ...) callback (registered in R/zzz.R). Takes
