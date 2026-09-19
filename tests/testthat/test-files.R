@@ -126,3 +126,35 @@ test_that("viya_delete_folder validates its arguments", {
                       base = "https://viya.example.com"), class = "viyar")
   expect_error(viya_delete_folder(h, ""))
 })
+
+test_that("an '@'-prefixed folder_path (a well-known Viya delegate like @myFolder) resolves via its own URI, not @item?path=", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) {
+    seen <<- req$url
+    httr2::response_json(status = 200, body = list(id = "myfolder-id", type = "myFolder"))
+  })
+
+  out <- viyar:::.viya_folder(h, "@myFolder")
+
+  expect_equal(out$id, "myfolder-id")
+  expect_match(seen, "/folders/folders/@myFolder$")
+  expect_false(grepl("@item", seen, fixed = TRUE))
+})
+
+test_that("a real path still resolves via @item?path= as before", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  seen <- NULL
+  httr2::local_mocked_responses(function(req) {
+    seen <<- req$url
+    httr2::response_json(status = 200, body = list(id = "public-id"))
+  })
+
+  viyar:::.viya_folder(h, "/Public")
+
+  expect_match(seen, "@item\\?path=", fixed = FALSE)
+})

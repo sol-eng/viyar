@@ -112,11 +112,25 @@ viya_read <- function(h, libref, table, dates = NULL, max_rows = 100000,
 #' Stages the data as CSV through the Viya Files service and imports it in
 #' the compute session using `FILENAME FILESRVC` + `PROC IMPORT`.
 #'
+#' The staging file lands in the caller's own private `"@myFolder"` by
+#' default (a Viya Folders API well-known delegate -- SAS's own
+#' documentation describes it as "not visible to other users except
+#' administrative users"), not the shared `/Public` folder every other
+#' user of the deployment can see and write to. The SAS-side `FILENAME
+#' FILESRVC` reference doesn't need `staging_folder`'s path at all: it
+#' addresses the uploaded file directly by its own resource URI
+#' (`FILESRVC '/files/files/<uuid>'`, FILESRVC's "Form 1" per SAS's
+#' Global Statements Reference), which is also more robust than the
+#' folder-path/name-matching alternative used by the previous
+#' `/Public`-based design.
+#'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param df The data.frame to write.
 #' @param libref Target library reference, e.g. `"WORK"`.
 #' @param table Target dataset name.
-#' @param staging_folder Viya folder used for the temporary CSV.
+#' @param staging_folder Viya folder used for the temporary CSV -- a real
+#'   path (e.g. `"/Public"`) or a well-known delegate like `"@myFolder"`
+#'   or `"@public"`.
 #' @param cleanup Delete the staged CSV afterwards.
 #' @return The [viya_submit()] result of the import job, invisibly.
 #' @examples
@@ -124,9 +138,21 @@ viya_read <- function(h, libref, table, dates = NULL, max_rows = 100000,
 #' viya_write(h, mtcars, "WORK", "MTCARS")
 #' }
 #' @export
-viya_write <- function(h, df, libref, table, staging_folder = "/Public",
+viya_write <- function(h, df, libref, table, staging_folder = "@myFolder",
                        cleanup = TRUE) {
   stopifnot(inherits(h, "viyar"), is.data.frame(df))
+  # write.csv() would otherwise emit logical columns as literal "TRUE"/
+  # "FALSE" text, which PROC IMPORT's guessing reads as a SAS character
+  # variable -- confirmed live -- losing boolean-ness entirely (and, per
+  # saspy's own equivalent logic in sasiohttp.py, that's the same
+  # 0/1-not-text convention it uses for a clean bool column too, though
+  # saspy's check only holds for a column pandas has kept as native bool
+  # dtype -- one with a missing value gets silently upcast to generic
+  # object dtype first, falling through to its string handling instead).
+  # R's `logical` has no such split: it holds NA natively without ever
+  # changing type, so converting to integer here handles every case
+  # uniformly, missing values included.
+  df[] <- lapply(df, function(col) if (is.logical(col)) as.integer(col) else col)
   tmp   <- tempfile(fileext = ".csv")
   fname <- paste0("viyar_stage_", format(Sys.time(), "%H%M%S"), ".csv")
   utils::write.csv(df, tmp, row.names = FALSE, na = "")
@@ -134,10 +160,10 @@ viya_write <- function(h, df, libref, table, staging_folder = "/Public",
   unlink(tmp)
 
   code <- sprintf(paste0(
-    "filename _viyar filesrvc folderpath='%s' filename='%s';\n",
+    "filename _viyar filesrvc '/files/files/%s';\n",
     "proc import datafile=_viyar out=%s.%s dbms=csv replace;\n",
     "  getnames=yes; guessingrows=max;\nrun;\nfilename _viyar clear;"),
-    staging_folder, fname, toupper(libref), toupper(table))
+    up$id, toupper(libref), toupper(table))
   r <- viya_submit(h, code)
 
   if (cleanup && !is.null(up$id)) {
