@@ -130,3 +130,73 @@ test_that("viya_read() leaves other columns alone when dates is given", {
 # reproduce it honestly: a unit test would only assert that
 # `as.numeric("60.2696")` is 60.2696. The `format=false` test above pins
 # the fix; `test-live-data.R` asserts the precision itself.
+
+# Serves every endpoint viya_write() hits: resolving the staging folder,
+# uploading the CSV, submitting the PROC IMPORT job, and cleaning up the
+# staged file -- dispatching on URL/method the same way .mock_submit()
+# and .mock_quarto_submit() do elsewhere in this suite.
+.mock_write <- function(seen) {
+  function(req) {
+    seen$url <- c(seen$url, req$url)
+    seen$method <- c(seen$method, req$method %||% "GET")
+    u <- req$url
+    if (grepl("/files/files\\?", u) && identical(req$method, "POST"))
+      return(httr2::response_json(status = 201, body = list(id = "upload-id-1")))
+    if (grepl("/folders/folders/", u, fixed = TRUE))
+      return(httr2::response_json(status = 200, body = list(id = "myfolder-id")))
+    if (grepl("/jobs$", u)) {
+      seen$submitted_code <<- paste(unlist(req$body$data$code), collapse = "\n")
+      return(httr2::response_json(status = 201, body = list(id = "job1")))
+    }
+    if (grepl("/state$", u))
+      return(httr2::response(status = 200, body = charToRaw("completed")))
+    if (grepl("/log", u))
+      return(httr2::response_json(status = 200, body = list(items = list())))
+    if (grepl("/files/files/upload-id-1$", u) && identical(req$method, "DELETE"))
+      return(httr2::response(status = 204))
+    stop("unexpected request: ", req$method %||% "GET", " ", u)
+  }
+}
+
+test_that("viya_write() stages through the private @myFolder by default, not the shared /Public", {
+  h <- .data_handle()
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_write(seen))
+
+  suppressMessages(viya_write(h, data.frame(x = 1), "WORK", "MYTABLE"))
+
+  expect_true(any(grepl("@myFolder", seen$url, fixed = TRUE)))
+  expect_false(any(grepl("@item", seen$url, fixed = TRUE)))
+})
+
+test_that("viya_write() references the staged file directly by its own URI, not a folderpath/filename pair", {
+  h <- .data_handle()
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_write(seen))
+
+  suppressMessages(viya_write(h, data.frame(x = 1), "WORK", "MYTABLE"))
+
+  expect_true(grepl("filesrvc '/files/files/upload-id-1'", seen$submitted_code, fixed = TRUE))
+  expect_false(grepl("folderpath=", seen$submitted_code, fixed = TRUE))
+})
+
+test_that("viya_write() still cleans up the staged file afterward", {
+  h <- .data_handle()
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_write(seen))
+
+  suppressMessages(viya_write(h, data.frame(x = 1), "WORK", "MYTABLE"))
+
+  expect_true(any(seen$method == "DELETE"))
+})
+
+test_that("viya_write() still honors an explicit staging_folder override", {
+  h <- .data_handle()
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_write(seen))
+
+  suppressMessages(viya_write(h, data.frame(x = 1), "WORK", "MYTABLE",
+                              staging_folder = "/Public"))
+
+  expect_true(any(grepl("@item", seen$url, fixed = TRUE)))
+})

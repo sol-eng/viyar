@@ -1,7 +1,13 @@
+# A "@"-prefixed folder_path (e.g. "@myFolder", "@public") is one of
+# Viya's own well-known Folders API delegates -- resolved by hitting its
+# reserved URI directly, /folders/folders/<delegate>, per SAS's own
+# devsascom-rest-api-samples (folders.md). A real path still goes through
+# @item?path= as before.
 .viya_folder <- function(h, folder_path) {
-  .viya_req(h, paste0("/folders/folders/@item?path=",
-                      utils::URLencode(folder_path, reserved = TRUE))) |>
-    httr2::req_perform() |> httr2::resp_body_json()
+  uri <- if (startsWith(folder_path, "@")) paste0("/folders/folders/", folder_path)
+         else paste0("/folders/folders/@item?path=",
+                     utils::URLencode(folder_path, reserved = TRUE))
+  .viya_req(h, uri) |> httr2::req_perform() |> httr2::resp_body_json()
 }
 
 #' Upload a local file to a Viya folder

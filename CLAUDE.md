@@ -88,6 +88,25 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   to a character column. Sibling parameters on the same endpoint, all
   currently unused: `formatMissingValues`, `returnNumAsString`,
   `includeColumnNames`, `includeIndex`, `where`.
+  `viya_write()` stages its CSV in the caller's own private
+  `"@myFolder"` by default (a Viya Folders API well-known delegate,
+  resolved via `.viya_folder()` in `R/files.R`), not the shared
+  `/Public` folder every user of the deployment can see and write to.
+  The SAS-side `FILENAME FILESRVC` reference doesn't use
+  `staging_folder`'s path at all for the read-back: it addresses the
+  uploaded file directly by its own resource URI
+  (`FILESRVC '/files/files/<uuid>'`, confirmed as FILESRVC's "Form 1"
+  against SAS's own Global Statements Reference), which sidesteps
+  needing to resolve `@myFolder` to a human-readable path string (its
+  `GET` response has no `path` field, only `id`/`parentFolderUri`) and
+  is more robust than the previous folder-path/name-matching design.
+  `saspy`'s own HTTP/Viya `dataframe2sasdata` was checked as a design
+  reference: it avoids file staging entirely, streaming row data as
+  inline `datalines4` text through the same job-submission channel as
+  regular code -- a legitimate alternative, but a much larger rewrite
+  (per-type encoding, embedded-newline escaping, chunked multi-submission)
+  than switching which folder/addressing mode this package's existing
+  CSV-staging design uses, so it wasn't adopted.
 - `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`/
   `viya_delete_file()`/`viya_delete_folder()` (SAS Content: the
   Files/Folders service). Both deletes resolve the target to its
@@ -95,7 +114,12 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `members` listing), then `DELETE` by that id -- no `ETag`/`If-Match`
   needed here (unlike `R/fs.R` below). `viya_delete_folder()` always
   sends `?recursive=true` (a no-op for an empty folder, required for a
-  non-empty one) rather than branching on emptiness.
+  non-empty one) rather than branching on emptiness. `.viya_folder()`
+  accepts a real path (resolved via `@item?path=`) or a "@"-prefixed
+  Viya Folders API well-known delegate (`"@myFolder"`, `"@public"`,
+  ...), resolved by hitting its reserved URI directly instead --
+  confirmed against SAS's own `devsascom-rest-api-samples` (`folders.md`),
+  not guessed.
 - `R/fs.R` — `viya_fs_mkdir()`/`viya_fs_upload()`/`viya_fs_download()`/
   `viya_fs_list()`/`viya_fs_delete()`: a second, distinct storage system
   -- the real OS filesystem a compute session sees (home directory,
