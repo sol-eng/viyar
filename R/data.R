@@ -141,6 +141,18 @@ viya_read <- function(h, libref, table, dates = NULL, max_rows = 100000,
 viya_write <- function(h, df, libref, table, staging_folder = "@myFolder",
                        cleanup = TRUE) {
   stopifnot(inherits(h, "viyar"), is.data.frame(df))
+  # write.csv() would otherwise emit logical columns as literal "TRUE"/
+  # "FALSE" text, which PROC IMPORT's guessing reads as a SAS character
+  # variable -- confirmed live -- losing boolean-ness entirely (and, per
+  # saspy's own equivalent logic in sasiohttp.py, that's the same
+  # 0/1-not-text convention it uses for a clean bool column too, though
+  # saspy's check only holds for a column pandas has kept as native bool
+  # dtype -- one with a missing value gets silently upcast to generic
+  # object dtype first, falling through to its string handling instead).
+  # R's `logical` has no such split: it holds NA natively without ever
+  # changing type, so converting to integer here handles every case
+  # uniformly, missing values included.
+  df[] <- lapply(df, function(col) if (is.logical(col)) as.integer(col) else col)
   tmp   <- tempfile(fileext = ".csv")
   fname <- paste0("viyar_stage_", format(Sys.time(), "%H%M%S"), ".csv")
   utils::write.csv(df, tmp, row.names = FALSE, na = "")

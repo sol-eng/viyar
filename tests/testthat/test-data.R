@@ -200,3 +200,22 @@ test_that("viya_write() still honors an explicit staging_folder override", {
 
   expect_true(any(grepl("@item", seen$url, fixed = TRUE)))
 })
+
+test_that("viya_write() writes logical columns as 1/0 (blank for NA), not literal TRUE/FALSE text", {
+  h <- .data_handle()
+  seen <- new.env()
+  csv_lines <- NULL
+  httr2::local_mocked_responses(function(req) {
+    if (grepl("/files/files\\?", req$url) && identical(req$method, "POST")) {
+      csv_lines <<- readLines(req$body$data)
+      return(httr2::response_json(status = 201, body = list(id = "upload-id-1")))
+    }
+    .mock_write(seen)(req)
+  })
+
+  suppressMessages(viya_write(h, data.frame(flag = c(TRUE, FALSE, NA)), "WORK", "MYTABLE"))
+
+  expect_false(any(grepl("TRUE|FALSE", csv_lines)))
+  expect_true("1" %in% csv_lines)
+  expect_true("0" %in% csv_lines)
+})
