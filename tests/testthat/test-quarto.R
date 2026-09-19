@@ -312,6 +312,205 @@ test_that(".viya_sas_engine() honors eval = FALSE and never submits", {
   expect_true(grepl("proc means; run;", out, fixed = TRUE))
 })
 
+test_that(".viya_sas_parse_libref_table() splits 'lib.table', defaulting the libref to 'work' when omitted", {
+  expect_equal(.viya_sas_parse_libref_table("work.result"), list(libref = "work", table = "result"))
+  expect_equal(.viya_sas_parse_libref_table("result"), list(libref = "work", table = "result"))
+  expect_equal(.viya_sas_parse_libref_table("PUBLIC.HEART"), list(libref = "PUBLIC", table = "HEART"))
+})
+
+test_that(".viya_sas_push_inputs() writes each named R data.frame to WORK.<NAME> before the chunk's code runs", {
+  h <- .quarto_handle()
+  assign("push_test_df", data.frame(x = 1:2), envir = .GlobalEnv)
+  withr::defer(rm("push_test_df", envir = .GlobalEnv))
+
+  seen <- list()
+  testthat::local_mocked_bindings(
+    viya_write = function(h, df, libref, table, ...) {
+      seen[[length(seen) + 1]] <<- list(df = df, libref = libref, table = table)
+      invisible(NULL)
+    })
+
+  .viya_sas_push_inputs(h, "push_test_df")
+
+  expect_length(seen, 1)
+  expect_equal(seen[[1]]$libref, "WORK")
+  expect_equal(seen[[1]]$table, "push_test_df")
+  expect_equal(seen[[1]]$df, data.frame(x = 1:2))
+})
+
+test_that(".viya_sas_push_inputs() errors clearly when the named object doesn't exist", {
+  h <- .quarto_handle()
+  expect_error(.viya_sas_push_inputs(h, "definitely_not_bound_anywhere"),
+              "does not name any object")
+})
+
+test_that(".viya_sas_push_inputs() errors clearly when the named object isn't a data.frame", {
+  h <- .quarto_handle()
+  assign("push_test_not_df", list(x = 1), envir = .GlobalEnv)
+  withr::defer(rm("push_test_not_df", envir = .GlobalEnv))
+
+  expect_error(.viya_sas_push_inputs(h, "push_test_not_df"),
+              "does not resolve to a data.frame")
+})
+
+test_that(".viya_sas_pull_output() reads the named SAS dataset and assigns it into the knit environment", {
+  h <- .quarto_handle()
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(y = libref, z = table))
+
+  .viya_sas_pull_output(h, "work.result", NULL)
+  withr::defer(rm("result", envir = .GlobalEnv))
+
+  expect_equal(get("result", envir = .GlobalEnv), data.frame(y = "work", z = "result"))
+})
+
+test_that(".viya_sas_pull_output() uses an explicit sas.output_var name over the table's own name", {
+  h <- .quarto_handle()
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(n = 1))
+
+  .viya_sas_pull_output(h, "work.result", "my_df")
+  withr::defer(rm("my_df", envir = .GlobalEnv))
+
+  expect_equal(get("my_df", envir = .GlobalEnv), data.frame(n = 1))
+})
+
+test_that(".viya_sas_pull_output() passes an explicit max_rows through to viya_read()", {
+  h <- .quarto_handle()
+  seen_max_rows <- "not set"
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, max_rows = "not set", ...) {
+      seen_max_rows <<- max_rows
+      data.frame()
+    })
+
+  .viya_sas_pull_output(h, "work.result", "capped_df", max_rows = 5)
+  withr::defer(rm("capped_df", envir = .GlobalEnv))
+
+  expect_equal(seen_max_rows, 5)
+})
+
+test_that(".viya_sas_pull_output() leaves max_rows at viya_read()'s own default when not given", {
+  h <- .quarto_handle()
+  seen_max_rows <- "not set"
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, max_rows = "not set", ...) {
+      seen_max_rows <<- max_rows
+      data.frame()
+    })
+
+  .viya_sas_pull_output(h, "work.result", "uncapped_df")
+  withr::defer(rm("uncapped_df", envir = .GlobalEnv))
+
+  expect_equal(seen_max_rows, "not set")
+})
+
+test_that(".viya_sas_engine() pushes sas.input data frames before submitting the code", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_push_handle", h, envir = .GlobalEnv)
+  assign("engine_push_df", data.frame(a = 1), envir = .GlobalEnv)
+  withr::defer(rm("engine_push_handle", "engine_push_df", envir = .GlobalEnv))
+
+  seen_write <- list()
+  testthat::local_mocked_bindings(
+    viya_write = function(h, df, libref, table, ...) {
+      seen_write[[length(seen_write) + 1]] <<- list(libref = libref, table = table)
+      invisible(NULL)
+    })
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(seen, state = "completed"))
+
+  options <- list(session = "engine_push_handle", sas.input = "engine_push_df",
+                  code = "proc print data=work.engine_push_df; run;",
+                  echo = FALSE, viya.output = "log")
+
+  .viya_sas_engine(options)
+
+  expect_length(seen_write, 1)
+  expect_equal(seen_write[[1]]$table, "engine_push_df")
+})
+
+test_that(".viya_sas_engine() pulls sas.output_data into sas.output_var after the code runs successfully", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_pull_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("engine_pull_handle", envir = .GlobalEnv))
+
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) data.frame(pulled = TRUE))
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(seen, state = "completed"))
+
+  options <- list(session = "engine_pull_handle",
+                  sas.output_data = "work.result", sas.output_var = "pulled_df",
+                  code = "data work.result; x = 1; run;",
+                  echo = FALSE, viya.output = "log")
+
+  .viya_sas_engine(options)
+  withr::defer(rm("pulled_df", envir = .GlobalEnv))
+
+  expect_equal(get("pulled_df", envir = .GlobalEnv), data.frame(pulled = TRUE))
+})
+
+test_that(".viya_sas_engine() threads sas.output_max_rows through to the pull", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_max_rows_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("engine_max_rows_handle", envir = .GlobalEnv))
+
+  seen_max_rows <- "not set"
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, max_rows = "not set", ...) {
+      seen_max_rows <<- max_rows
+      data.frame(n = 1)
+    })
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(seen, state = "completed"))
+
+  options <- list(session = "engine_max_rows_handle",
+                  sas.output_data = "work.result", sas.output_var = "capped_df",
+                  sas.output_max_rows = 10,
+                  code = "data work.result; x = 1; run;",
+                  echo = FALSE, viya.output = "log")
+
+  .viya_sas_engine(options)
+  withr::defer(rm("capped_df", envir = .GlobalEnv))
+
+  expect_equal(seen_max_rows, 10)
+})
+
+test_that(".viya_sas_engine() skips the sas.output_data pull when the job didn't complete", {
+  skip_if_not_installed("knitr")
+  h <- .quarto_handle()
+  assign("engine_skip_pull_handle", h, envir = .GlobalEnv)
+  withr::defer(rm("engine_skip_pull_handle", envir = .GlobalEnv))
+
+  read_called <- FALSE
+  testthat::local_mocked_bindings(
+    viya_read = function(h, libref, table, ...) {
+      read_called <<- TRUE
+      data.frame()
+    })
+
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_quarto_submit(seen, state = "error"))
+
+  options <- list(session = "engine_skip_pull_handle",
+                  sas.output_data = "work.result", sas.output_var = "skipped_df",
+                  viya.error = TRUE,
+                  code = "data work.result; x = 1/0; run;",
+                  echo = FALSE, viya.output = "log")
+
+  .viya_sas_engine(options)
+
+  expect_false(read_called)
+  expect_false(exists("skipped_df", envir = .GlobalEnv))
+})
+
 test_that("the sas knitr engine is registered when the package loads and knitr is available", {
   skip_if_not_installed("knitr")
   expect_identical(knitr::knit_engines$get("sas"), .viya_sas_engine)
