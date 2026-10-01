@@ -1,0 +1,197 @@
+---
+title: "viyar: the {sas} Quarto chunk engine"
+subtitle: "Submitting SAS code from a Quarto document"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+editor: visual
+---
+
+## What this notebook shows
+
+`viyar` registers a knitr chunk engine named `sas` when the package
+loads (as long as `knitr` is installed) -- this replaces knitr's own
+built-in `sas` engine (which shells out to a local SAS installation),
+so a `{sas}` chunk always submits to Viya once `viyar` is loaded. Any
+`{sas}` block in a Quarto document is then submitted to a Viya compute
+session you've already started -- the engine never starts or ends a
+session itself, matching how R chunks share one implicit R process
+throughout a document.
+
+## Setup
+
+Start the session exactly as you would for any other `viyar` workflow --
+see `viyar-workflow-demo.qmd` for the full authentication walkthrough
+(Workbench managed OAuth vs. `viya_login()` for local desktop R/Positron
+Desktop). Nothing about authentication changes for the `{sas}` engine.
+
+```{r}
+#| label: setup
+#| eval: false
+
+library(viyar)
+h <- viya_session()
+```
+
+## A basic `{sas}` chunk
+
+By default, `viya.output` is `"html"` -- your SAS code's own `ods html5`
+output (opened with no `file=`, per `viya_submit()`'s existing
+convention) is rendered directly into the document, with no log shown.
+This is deliberately a clean-report default, not a debugging default.
+
+```{sas}
+*| session: h;
+*| eval: false;
+
+ods html5;
+proc means data=sashelp.class;
+run;
+ods html5 close;
+```
+
+## Showing the log or the traditional listing instead
+
+Set `viya.output` to any combination of `"log"`, `"listing"`, `"html"`.
+`viya.output: "listing"` is also the documented alternative for
+non-HTML Quarto targets (PDF/Typst/docx), where raw ODS HTML can't
+render.
+
+```{sas}
+*| session: h;
+*| viya.output: ["log", "listing"];
+*| eval: false;
+
+ods listing;
+proc print data=sashelp.class(obs=5);
+run;
+ods listing close;
+```
+
+## Hiding the SAS source
+
+Standard knitr `echo` applies -- set it to `false` to hide the
+submitted code and show only the requested output.
+
+```{sas}
+*| session: h;
+*| echo: false;
+*| eval: false;
+
+proc means data=sashelp.class;
+run;
+```
+
+## A chunk where a non-`"completed"` state is expected
+
+By default, any job state other than `"completed"` stops the render
+(fail-fast) -- appropriate for a submission pipeline, where an
+unnoticed downstream error is worse than a stopped build. Set
+`viya.error: true` to suppress that for a specific chunk instead.
+
+```{sas}
+*| session: h;
+*| viya.error: true;
+*| eval: false;
+
+%put NOTE: this chunk demonstrates viya.error, not a real failure;
+```
+
+## Mixing R and SAS data in one document
+
+`{sas}` chunks share the document's R environment the same way they
+share `h`: name an R data.frame in `sas.input` and it's written to SAS
+(via [viya_write()]) before the chunk's own code runs; name a SAS
+dataset in `sas.output_data` and it's read back (via [viya_read()])
+into an R variable named by `sas.output_var` right after the code
+finishes -- so a *later* `{r}` chunk can reference it by name, exactly
+like a later `{sas}` chunk already can with `session: h`. Both options
+take one or more values.
+
+```{r}
+#| label: mtcars-setup
+#| eval: false
+
+mtcars_r <- mtcars
+```
+
+By default `sas.input` lands in `WORK.<name>` (matching [viya_write()]'s
+own default), and `sas.output_var` defaults to each table's own name --
+give it a `"libref.name"` spec instead to land somewhere else, e.g.
+`sas.input: "mylib.mtcars_r"` writes to `MYLIB.MTCARS_R`.
+
+```{sas}
+*| session: h;
+*| sas.input: mtcars_r;
+*| sas.output_data: "work.mtcars_heavy";
+*| sas.output_var: mtcars_heavy;
+*| echo: false;
+*| eval: false;
+
+data work.mtcars_heavy;
+  set work.mtcars_r;
+  where wt > 3;
+run;
+```
+
+```{r}
+#| label: mtcars-back-in-r
+#| eval: false
+
+nrow(mtcars_heavy)
+```
+
+Multiple inputs/outputs are just longer vectors -- `sas.output_var`, if
+given at all, must have exactly as many names as `sas.output_data` has
+tables (matched by position); errors rather than silently mismatching or
+dropping extras otherwise.
+
+```{sas}
+*| session: h;
+*| sas.output_data: ["work.mtcars_heavy", "work.mtcars_light"];
+*| sas.output_var: ["heavy_r", "light_r"];
+*| echo: false;
+*| eval: false;
+
+data work.mtcars_heavy work.mtcars_light;
+  set work.mtcars_r;
+  if wt > 3 then output work.mtcars_heavy;
+  else output work.mtcars_light;
+run;
+```
+
+The pull is skipped entirely (nothing assigned, for any of the tables in
+a multi-output pull) if the chunk's job doesn't reach a `"completed"`
+state -- including when `viya.error: true` suppresses the fail-fast
+throw for an intentionally-failing chunk, since the named output
+dataset(s) were likely never created. `viya_read()`'s own `max_rows`
+safety cap (100000 rows, a client-side guard against pulling an entire
+CAS-sized table into memory, not a REST limit) still applies to every
+table in the pull; override it per chunk with `sas.output_max_rows` if
+you know the result is larger and safe to pull in full.
+
+## Chunk option reference
+
+| Option | Default | Meaning |
+|---|---|---|
+| `session` | *(required)* | R symbol naming the `viyar` handle, e.g. `h` |
+| `viya.output` | `"html"` | one or more of `"log"`, `"listing"`, `"html"` |
+| `viya.error` | `false` | suppress the fail-fast throw for this chunk |
+| `echo` | `true` | show the submitted SAS source (standard knitr option) |
+| `viya.poll_s` | `1` | polling interval in seconds |
+| `viya.timeout_s` | `300` | give up after this many seconds |
+| `sas.input` | *(none)* | R data.frame name(s), each a bare name (-> `WORK.<name>`) or `"libref.name"` |
+| `sas.output_data` | *(none)* | SAS `"libref.table"` name(s) (libref defaults to `work`) to read back after the code runs |
+| `sas.output_var` | each table's own name | R variable name(s) for the pulled data.frame(s), matched to `sas.output_data` by position |
+| `sas.output_max_rows` | `100000` | override `viya_read()`'s row cap for this pull (applies to every table pulled) |
+
+## Clean up
+
+```{r}
+#| label: cleanup
+#| eval: false
+
+viya_end(h)
+```

@@ -14,8 +14,18 @@
   out
 }
 
+# Joins a base URL to a path with exactly one separator, whichever side
+# carries (or omits) the slash. Both sides are untrusted: the base comes
+# from user input or VIYA_URL, which is commonly set with a trailing "/"
+# (Viya 404s "There is no handler defined for the path" on the resulting
+# "//compute/..."), and some paths are hrefs the service hands back --
+# see .viya_result_path(), whose base-stripping can drop the leading "/".
+.viya_url <- function(base, path) {
+  paste0(sub("/+$", "", base), "/", sub("^/+", "", path))
+}
+
 .viya_req <- function(h, path) {
-  httr2::request(paste0(h$base, path)) |>
+  httr2::request(.viya_url(h$base, path)) |>
     httr2::req_auth_bearer_token(h$token) |>
     httr2::req_timeout(120) |>
     httr2::req_retry(max_tries = 3, is_transient = .viya_is_transient) |>

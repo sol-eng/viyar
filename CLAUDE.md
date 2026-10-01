@@ -88,6 +88,25 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   to a character column. Sibling parameters on the same endpoint, all
   currently unused: `formatMissingValues`, `returnNumAsString`,
   `includeColumnNames`, `includeIndex`, `where`.
+  `viya_write()` stages its CSV in the caller's own private
+  `"@myFolder"` by default (a Viya Folders API well-known delegate,
+  resolved via `.viya_folder()` in `R/files.R`), not the shared
+  `/Public` folder every user of the deployment can see and write to.
+  The SAS-side `FILENAME FILESRVC` reference doesn't use
+  `staging_folder`'s path at all for the read-back: it addresses the
+  uploaded file directly by its own resource URI
+  (`FILESRVC '/files/files/<uuid>'`, confirmed as FILESRVC's "Form 1"
+  against SAS's own Global Statements Reference), which sidesteps
+  needing to resolve `@myFolder` to a human-readable path string (its
+  `GET` response has no `path` field, only `id`/`parentFolderUri`) and
+  is more robust than the previous folder-path/name-matching design.
+  `saspy`'s own HTTP/Viya `dataframe2sasdata` was checked as a design
+  reference: it avoids file staging entirely, streaming row data as
+  inline `datalines4` text through the same job-submission channel as
+  regular code -- a legitimate alternative, but a much larger rewrite
+  (per-type encoding, embedded-newline escaping, chunked multi-submission)
+  than switching which folder/addressing mode this package's existing
+  CSV-staging design uses, so it wasn't adopted.
 - `R/files.R` — `viya_upload()`/`viya_download()`/`viya_create_folder()`/
   `viya_delete_file()`/`viya_delete_folder()` (SAS Content: the
   Files/Folders service). Both deletes resolve the target to its
@@ -95,7 +114,12 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `members` listing), then `DELETE` by that id -- no `ETag`/`If-Match`
   needed here (unlike `R/fs.R` below). `viya_delete_folder()` always
   sends `?recursive=true` (a no-op for an empty folder, required for a
-  non-empty one) rather than branching on emptiness.
+  non-empty one) rather than branching on emptiness. `.viya_folder()`
+  accepts a real path (resolved via `@item?path=`) or a "@"-prefixed
+  Viya Folders API well-known delegate (`"@myFolder"`, `"@public"`,
+  ...), resolved by hitting its reserved URI directly instead --
+  confirmed against SAS's own `devsascom-rest-api-samples` (`folders.md`),
+  not guessed.
 - `R/fs.R` — `viya_fs_mkdir()`/`viya_fs_upload()`/`viya_fs_download()`/
   `viya_fs_list()`/`viya_fs_delete()`: a second, distinct storage system
   -- the real OS filesystem a compute session sees (home directory,
@@ -175,6 +199,47 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
     error, but against an empty collection, so its semantics are
     unconfirmed). None of these are wrapped -- adding them needs a
     populated repository first.
+- `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
+  `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
+  always fetches the log internally for diagnosis, defaults `output` to
+  `"html"` instead of `"log"`, and raises an R error on any
+  non-`"completed"` job state unless `error = TRUE`) and the engine
+  internals it's built on -- `.viya_resolve_session()` (a chunk's
+  `session` option, resolved the same way knitr's own `sql` engine
+  resolves `connection`: a bare name is looked up in
+  `knitr::knit_global()`, an already-resolved handle is passed through
+  as-is), `.viya_sas_render()` (assembles code echo + log/listing
+  fenced blocks + ODS HTML into one `knitr::asis_output()` string,
+  bypassing the chunk's own `results` option entirely since formatting
+  is fully decided here), and `.viya_html_iframe()` (wraps each ODS HTML
+  result in an `<iframe srcdoc="...">` before splicing it in). ODS
+  HTML5 output is a full standalone document with its own
+  `<head><style>` block -- SAS's default template centers title/heading
+  elements via broad, unscoped selectors (`H1`, etc, not a namespaced
+  class) -- so splicing it in raw let that `<style>` block leak into
+  the surrounding page (any `<style>` tag anywhere in a parsed HTML
+  document applies page-wide) and re-center every Quarto section
+  heading, not just the SAS output (found live rendering a mixed R/SAS
+  document). The iframe gives ODS's markup its own document, scoping
+  its CSS to itself; an `onload` handler grows the iframe to fit its
+  content since ODS output height isn't known ahead of render.
+  `.viya_html_iframe()` escapes `&` before `"` (in that order --
+  reversed, `&quot;`'s own `&` would get double-escaped) so the
+  original HTML round-trips exactly through the `srcdoc` attribute's
+  one level of entity decoding. The compute session itself is never started
+  or ended automatically -- a document's setup chunk calls
+  `viya_session()`/`viya_end()` exactly as it does today; the engine
+  only ever consumes a handle the user already made. Chunk options are
+  namespaced `viya.*` (`viya.output`, `viya.error`, `viya.poll_s`,
+  `viya.timeout_s`) to avoid colliding with knitr/Quarto's own `output`
+  chunk option. See
+  `docs/superpowers/specs/2026-09-16-quarto-sas-engine-design.md` for
+  the full design rationale, including why the sticky session-wide
+  error state (see "Known gaps / follow-ups" below) is neutralized
+  rather than worked around by this engine's fail-fast default.
+- `R/zzz.R` — `.onLoad()` registers the `sas` engine
+  (`knitr::knit_engines$set(sas = .viya_sas_engine)`) only if `knitr`
+  is installed (a `Suggests`, not a hard dependency).
 
 ## The `viyar` S3 handle
 
