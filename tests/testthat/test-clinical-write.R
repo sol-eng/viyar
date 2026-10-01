@@ -268,3 +268,127 @@ test_that("viya_clinical_update() rejects a name containing '/'", {
                                     url = .cw_url),
                "without '/'")
 })
+
+# ---- check out / check in / undo -------------------------------------
+
+.cw_ws <- "/clinicalRepository/workspaces/@currentUser"
+
+# .cw_items with adsl.sas already checked out, for the check-in tests.
+.cw_items_checked_out <- local({
+  x <- .cw_items
+  x[["/Acme/data/adsl.sas"]]$checkedOut <- TRUE
+  x
+})
+
+test_that("viya_clinical_checkout() sends CHECK_OUT for the file's path", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  viya_clinical_checkout("/Acme/data/adsl.sas", token = "t", url = .cw_url)
+
+  expect_true(paste0("POST ", .cw_ws,
+                     "/files?path=%2FAcme%2Fdata%2Fadsl.sas&action=CHECK_OUT")
+              %in% seen$calls)
+  expect_false(any(grepl("/content$", seen$calls)))
+})
+
+test_that("viya_clinical_checkout() downloads the file when given local_path", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  dest <- withr::local_tempfile(fileext = ".sas")
+
+  viya_clinical_checkout("/Acme/data/adsl.sas", dest, token = "t",
+                         url = .cw_url)
+
+  expect_true("POST /clinicalRepository/repository/items/file-1/content" %in%
+                seen$calls)
+  expect_equal(readLines(dest), "v1")
+})
+
+test_that("viya_clinical_checkout() won't overwrite a local file unless asked", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  dest <- withr::local_tempfile(fileext = ".sas")
+  writeLines("my local edits", dest)
+
+  expect_error(viya_clinical_checkout("/Acme/data/adsl.sas", dest,
+                                      token = "t", url = .cw_url),
+               "already exists.*overwrite = TRUE")
+  expect_null(seen$calls)
+  expect_equal(readLines(dest), "my local edits")
+
+  viya_clinical_checkout("/Acme/data/adsl.sas", dest, overwrite = TRUE,
+                         token = "t", url = .cw_url)
+  expect_equal(readLines(dest), "v1")
+})
+
+test_that("viya_clinical_checkin() uploads to the workspace, then checks in", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen, items = .cw_items_checked_out))
+  src <- withr::local_tempfile(fileext = ".txt")
+  writeLines("v2", src)
+
+  viya_clinical_checkin("/Acme/data/adsl.sas", src, comment = "fix TRTSDT",
+                        token = "t", url = .cw_url)
+
+  put_i <- grep(paste0("^PUT ", .cw_ws,
+                       "/items\\?path=%2FAcme%2Fdata%2Fadsl.sas$"), seen$calls)
+  ci_i  <- grep("action=CHECK_IN&comment=fix%20TRTSDT$", seen$calls)
+  expect_length(put_i, 1)
+  expect_length(ci_i, 1)
+  expect_lt(put_i, ci_i)
+  put <- seen$reqs[[put_i]]
+  expect_equal(put$body$data$file$path, normalizePath(src))
+  # The workspace copy takes the repository file's name, not the local one.
+  expect_equal(put$body$data$file$name, "adsl.sas")
+})
+
+test_that("viya_clinical_checkin() leaves comment out of the query when NULL", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen, items = .cw_items_checked_out))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("v2", src)
+
+  viya_clinical_checkin("/Acme/data/adsl.sas", src, token = "t", url = .cw_url)
+
+  ci <- grep("action=CHECK_IN", seen$calls, value = TRUE)
+  expect_length(ci, 1)
+  expect_false(grepl("comment=", ci))
+})
+
+test_that("viya_clinical_checkin() refuses a file that isn't checked out", {
+  # Checking first keeps the workspace untouched and gives a clearer error
+  # than the server's "not currently checked out, is not a file or does not
+  # exist".
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("v2", src)
+
+  expect_error(viya_clinical_checkin("/Acme/data/adsl.sas", src, token = "t",
+                                     url = .cw_url),
+               "not checked out.*viya_clinical_checkout")
+  expect_false(any(grepl("^PUT|CHECK_IN", seen$calls)))
+})
+
+test_that("viya_clinical_checkin() checks the local file before any request", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen, items = .cw_items_checked_out))
+
+  expect_error(viya_clinical_checkin("/Acme/data/adsl.sas", "no-such.sas",
+                                     token = "t", url = .cw_url),
+               "does not exist")
+  expect_null(seen$calls)
+})
+
+test_that("viya_clinical_undo_checkout() sends UNDO_CHECKOUT", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen, items = .cw_items_checked_out))
+
+  viya_clinical_undo_checkout("/Acme/data/adsl.sas", token = "t",
+                              url = .cw_url)
+
+  expect_true(paste0("POST ", .cw_ws,
+                     "/files?path=%2FAcme%2Fdata%2Fadsl.sas&action=UNDO_CHECKOUT")
+              %in% seen$calls)
+})

@@ -210,3 +210,121 @@ viya_clinical_update <- function(path, name = NULL, description = NULL,
   message("updated ", out$path %||% path)
   invisible(out)
 }
+
+# The one workspace request behind check-out, check-in and undo. Found
+# live: workspace paths mirror repository paths, so the repository path is
+# passed through as-is.
+.viya_clinical_ws_action <- function(h, path, action, comment = NULL) {
+  q <- paste0("/clinicalRepository/workspaces/@currentUser/files?path=",
+              .viya_clinical_enc(path), "&action=", action)
+  if (!is.null(comment)) q <- paste0(q, "&comment=", .viya_clinical_enc(comment))
+  .viya_req(h, q) |> httr2::req_method("POST") |> httr2::req_perform()
+  invisible(NULL)
+}
+
+#' Check out a Clinical Repository file
+#'
+#' Checks a file out to you, so others can't check in changes to it until
+#' you check it back in ([viya_clinical_checkin()]) or undo the check-out
+#' ([viya_clinical_undo_checkout()]). Give `local_path` to download the
+#' file at the same time.
+#'
+#' @param path Repository path of the file.
+#' @param local_path Where to download the file. `NULL` (the default)
+#'   checks the file out without downloading it.
+#' @param overwrite Replace `local_path` if it already exists. `FALSE` by
+#'   default, so local edits aren't lost.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The file's metadata after check-out (see
+#'   [viya_clinical_item()]), invisibly. `checkedOut` is `TRUE` and
+#'   `checkedOutBy` names you.
+#' @examples
+#' \dontrun{
+#' viya_clinical_checkout("/Acme/Study 1/programs/adsl.sas", "adsl.sas")
+#' # ...edit adsl.sas...
+#' viya_clinical_checkin("/Acme/Study 1/programs/adsl.sas", "adsl.sas",
+#'                       comment = "Derive TRTSDT from EX")
+#' }
+#' @export
+viya_clinical_checkout <- function(path, local_path = NULL, overwrite = FALSE,
+                                   token = viya_token(),
+                                   url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(nzchar(path))
+  if (!is.null(local_path)) {
+    stopifnot(is.character(local_path), length(local_path) == 1,
+              nzchar(local_path))
+    if (file.exists(local_path) && !isTRUE(overwrite))
+      stop("'", local_path, "' already exists; pass overwrite = TRUE to ",
+           "replace it")
+  }
+  .viya_clinical_ws_action(h, path, "CHECK_OUT")
+  if (!is.null(local_path)) viya_clinical_download(path, local_path, token, url)
+  message("checked out ", path)
+  invisible(viya_clinical_item(path, token, url))
+}
+
+#' Check in a Clinical Repository file
+#'
+#' Uploads your local copy of a checked-out file and checks it in,
+#' replacing the repository's content and releasing the check-out.
+#'
+#' @param path Repository path of the file. It must be checked out to you
+#'   (see [viya_clinical_checkout()]).
+#' @param local_path Path of the local copy to check in.
+#' @param comment Optional check-in comment, stored on the file.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The file's metadata after check-in (see [viya_clinical_item()]),
+#'   invisibly. `fileComment` holds `comment`.
+#' @inherit viya_clinical_checkout examples
+#' @export
+viya_clinical_checkin <- function(path, local_path, comment = NULL,
+                                  token = viya_token(),
+                                  url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(nzchar(path), is.character(local_path), length(local_path) == 1)
+  if (!file.exists(local_path)) stop("'", local_path, "' does not exist")
+  if (!is.null(comment)) stopifnot(is.character(comment), length(comment) == 1)
+
+  it <- viya_clinical_item(path, token, url)
+  if (!isTRUE(it$checkedOut))
+    stop("'", path, "' is not checked out; call viya_clinical_checkout() ",
+         "first")
+  # Found live: check-in reads the file from your workspace, so the local
+  # copy goes there first. CHECK_OUT already created the workspace folders.
+  .viya_req(h, paste0("/clinicalRepository/workspaces/@currentUser/items?path=",
+                      .viya_clinical_enc(path))) |>
+    httr2::req_method("PUT") |>
+    httr2::req_body_multipart(
+      file = curl::form_file(local_path, name = basename(path))) |>
+    httr2::req_perform()
+  .viya_clinical_ws_action(h, path, "CHECK_IN", comment = comment)
+  message("checked in ", path)
+  invisible(viya_clinical_item(path, token, url))
+}
+
+#' Undo a Clinical Repository check-out
+#'
+#' Releases your check-out of a file without changing the repository's
+#' copy. Local files are untouched.
+#'
+#' @param path Repository path of the file.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The file's metadata afterwards (see [viya_clinical_item()]),
+#'   invisibly.
+#' @examples
+#' \dontrun{
+#' viya_clinical_undo_checkout("/Acme/Study 1/programs/adsl.sas")
+#' }
+#' @export
+viya_clinical_undo_checkout <- function(path, token = viya_token(),
+                                        url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(nzchar(path))
+  .viya_clinical_ws_action(h, path, "UNDO_CHECKOUT")
+  message("undid check-out of ", path)
+  invisible(viya_clinical_item(path, token, url))
+}
