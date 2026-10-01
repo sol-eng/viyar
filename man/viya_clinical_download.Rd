@@ -14,7 +14,8 @@ viya_clinical_download(
 \arguments{
 \item{path}{Repository path of the item to download.}
 
-\item{local_path}{Local destination path for the ZIP archive.}
+\item{local_path}{Local destination path: the file itself, or the ZIP
+archive for a container.}
 
 \item{token}{Viya access token; defaults to [viya_token()].}
 
@@ -24,20 +25,26 @@ viya_clinical_download(
 `local_path`, invisibly.
 }
 \description{
-Downloads an item's content to a local file. The service always answers
-with a **ZIP archive**, whichever kind of item you ask for: a file
-comes back zipped, and a context or folder comes back as a zip of
-everything under it. Give `local_path` a `.zip` extension and unpack it
-with [utils::unzip()].
+Downloads an item's content to a local file. What you get depends on
+the item:
 }
 \details{
+* a **file** downloads as itself -- its latest content, byte for byte;
+* a **context or folder** downloads as a **ZIP archive** of everything
+  under it. Give `local_path` a `.zip` extension and unpack it with
+  [utils::unzip()].
+
+The service sends no file name with either, so `local_path` must name
+the destination file in full.
+
 The download is a `POST`, not a `GET` -- the service answers `GET` on
 this endpoint with `405` and names `POST`/`PUT` as the methods it
 supports.
 }
 \examples{
 \dontrun{
-viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.zip")
-utils::unzip("protocol.zip", exdir = "protocol")
+viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.sas")
+viya_clinical_download("/Acme/Study 1", "study1.zip")
+utils::unzip("study1.zip", exdir = "study1")
 }
 }

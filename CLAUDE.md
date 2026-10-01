@@ -168,37 +168,74 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
     `not a valid "ItemType"`. `viya_clinical_types()` exposes the
     catalogue so `type_id` is interpretable.
   - **live** Download is `POST /repository/items/{id}/content`, not
-    `GET` -- `GET` answers `405` naming `POST`/`PUT`. It always returns
-    `application/zip`, even for a container (the empty root gives a
-    22-byte end-of-central-directory zip), with **no
-    `Content-Disposition`** to recover a filename from. Hence
-    `viya_clinical_download()` documents its output as an archive rather
-    than pretending to hand back the file.
+    `GET` -- `GET` answers `405` naming `POST`/`PUT`. A **file** comes
+    back raw, with its own media type (`application/x-sas` for a `.sas`
+    program); a **container** comes back as `application/zip` (the empty
+    root gives a 22-byte end-of-central-directory zip). Neither sends a
+    `Content-Disposition`, so there is no filename to recover. An earlier
+    version of this note said *every* download was a zip -- that was
+    inferred from the empty root alone and disproved once a real file
+    existed (2026-10-01). `viya_clinical_download()` keys its "(zip
+    archive)" message off the response's content type.
+  - **live** Containers carry `size = -1` ("no size"); files carry their
+    byte count. `viya_clinical_list()` maps negative sizes to `NA`.
   - **live** Collections emit real `next`/`prev`/`first`/`last`
     hypermedia links whenever a further page exists, and each `href` is
     already a service-absolute path usable straight from `.viya_req()`
-    (verified on `/clinicalRepository/users` at `limit=1`).
+    (verified on `/clinicalRepository/users`, and on
+    `/repository/items/{id}/children` with two children at `limit=1`).
     `.viya_clinical_collect()` therefore follows `next` to the end --
-    the one list path in this package that does not truncate. `count`
-    is the size of *this page*, not the collection total.
+    the one list path in this package that does not truncate. On
+    `children`, `count` is the collection total (2 on a one-item page),
+    and the `next` href carries a server-added `sortBy=` parameter.
     `/clinicalRepository/types` is the exception: it ignores `start`
     and `limit` entirely and returns all 50 types in one page.
-  - **live** Writes need admin: `POST .../children` answers `403` with
-    "the `X-SAS-Clinical-Authorization` request header value must be set
-    to `ADMIN`" *and* membership of the Clinical Administrators group.
-    Sending the header without the membership still 403s. The `caf`
-    repository is empty and the test account is not an administrator, so
-    **no live fixture could be seeded** -- which is why the live tier
-    validates the root item, the empty-container frame shape, the type
-    catalogue, the 404 message and the zip download, but cannot cover a
-    populated listing or a real file download.
+  - **live** Writes (all confirmed 2026-10-01 with a Clinical
+    Administrators account on `caf`; none are wrapped yet):
+    - Creating a top-level context (`organization` under the root, id
+      `"1"`) needs the `X-SAS-Clinical-Authorization: ADMIN` header *and*
+      Clinical Administrators membership. Inside a context you created,
+      the header is **not** needed -- sending it there 403s "Access is
+      denied" -- your own permissions apply.
+    - `POST .../children` (the catalogue's `createContainer`) takes
+      `type` (`CONTEXT`/`FOLDER`), `typeId` and `name` as **query**
+      parameters; a JSON body is ignored ("Required request parameter
+      `name` is missing"). It creates containers only -- `type=FILE` is
+      rejected.
+    - Files go in through `PUT /repository/items/{containerId}/content`
+      (multipart, one `file` part). The stored name is the **file
+      part's own filename**; a separate `filename` form field is
+      ignored. There is also a workspace route -- create folders with
+      `POST /workspaces/@currentUser/folders?path=&name=`, upload with
+      `PUT /workspaces/@currentUser/items?path=`, then
+      `POST /workspaces/@currentUser/files?path=&action=CHECK_IN&comment=`
+      (also `CHECK_OUT`, `UNDO_CHECKOUT`, `COPY_VERSION`, ...). Workspace
+      paths mirror repository paths.
+    - **`.R` and `.r` uploads are rejected** on `caf` ("Files with
+      extension "R" cannot be uploaded"), although an `rprogram` type
+      exists -- likely a deployment setting, unconfirmed.
+    - Privileges the test account lacks: "Enable/Manage Versioning"
+      (so `CHECK_IN` with `fileVersion=MAJOR` 403s; an unversioned
+      check-in works) and "Permanently Delete Items".
+    - `DELETE /repository/items/{id}` moves a file or folder to the
+      recycle bin. Contexts can only be deleted with `?permanent=true`
+      ("Context types cannot be logically deleted"), which needs the
+      privilege above, and the admin header doesn't help ("You cannot
+      perform this action as an administrator"). So a test run cannot
+      clean up an organization it creates.
+    - Live fixture on `caf`: `/viyar_live_test_1790887509` (folders
+      `data`, holding `hello.sas` and `direct.sas`, and `programs`),
+      plus an empty `/viyar_live_test_tmp_*` organization -- both left
+      over because of the delete limit above.
   - **inferred** (developer.sas.com only, never exercised):
     `GET /repository/items/{fileId}/versions[/{v}/content]`,
     `GET|POST /repository/files/content` (bulk zip by filter/search),
     and the `filter=` RQL parameter on `children` (accepted live without
     error, but against an empty collection, so its semantics are
-    unconfirmed). None of these are wrapped -- adding them needs a
-    populated repository first.
+    unconfirmed). None of these are wrapped. The `caf` fixture above is
+    populated now, but its files are unversioned (the test account lacks
+    the versioning privilege), so the versions endpoints still have
+    nothing to return there.
 - `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
   `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
   always fetches the log internally for diagnosis, defaults `output` to

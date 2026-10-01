@@ -53,9 +53,11 @@
     type     = chr("primaryType"),
     type_id  = chr("typeId"),
     path     = chr("path"),
-    size     = vapply(items,
-                      function(x) as.numeric(x[["size"]] %||% NA_real_),
-                      numeric(1)),
+    # Containers carry size = -1 ("no size"), not a byte count (found live).
+    size     = vapply(items, function(x) {
+                        s <- as.numeric(x[["size"]] %||% NA_real_)
+                        if (!is.na(s) && s < 0) NA_real_ else s
+                      }, numeric(1)),
     state    = chr("state"),
     modified = chr("modifiedTimeStamp"),
     stringsAsFactors = FALSE)
@@ -111,8 +113,8 @@ viya_clinical_item <- function(path = "/", token = viya_token(),
 #' @param token Viya access token; defaults to [viya_token()].
 #' @param url Viya base URL; defaults to the configured URL.
 #' @return A data frame with columns `name`, `id`, `type` (`"CONTEXT"`,
-#'   `"FOLDER"` or `"FILE"`), `type_id`, `path`, `size` (bytes), `state`
-#'   and `modified`. An empty container gives a zero-row frame with those
+#'   `"FOLDER"` or `"FILE"`), `type_id`, `path`, `size` (bytes; `NA` for a
+#'   context or folder), `state` and `modified`. An empty container gives a zero-row frame with those
 #'   same columns.
 #' @examples
 #' \dontrun{
@@ -132,25 +134,32 @@ viya_clinical_list <- function(path = "/", token = viya_token(),
 
 #' Download Clinical Repository content
 #'
-#' Downloads an item's content to a local file. The service always answers
-#' with a **ZIP archive**, whichever kind of item you ask for: a file
-#' comes back zipped, and a context or folder comes back as a zip of
-#' everything under it. Give `local_path` a `.zip` extension and unpack it
-#' with [utils::unzip()].
+#' Downloads an item's content to a local file. What you get depends on
+#' the item:
+#'
+#' * a **file** downloads as itself -- its latest content, byte for byte;
+#' * a **context or folder** downloads as a **ZIP archive** of everything
+#'   under it. Give `local_path` a `.zip` extension and unpack it with
+#'   [utils::unzip()].
+#'
+#' The service sends no file name with either, so `local_path` must name
+#' the destination file in full.
 #'
 #' The download is a `POST`, not a `GET` -- the service answers `GET` on
 #' this endpoint with `405` and names `POST`/`PUT` as the methods it
 #' supports.
 #'
 #' @param path Repository path of the item to download.
-#' @param local_path Local destination path for the ZIP archive.
+#' @param local_path Local destination path: the file itself, or the ZIP
+#'   archive for a container.
 #' @param token Viya access token; defaults to [viya_token()].
 #' @param url Viya base URL; defaults to the configured URL.
 #' @return `local_path`, invisibly.
 #' @examples
 #' \dontrun{
-#' viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.zip")
-#' utils::unzip("protocol.zip", exdir = "protocol")
+#' viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.sas")
+#' viya_clinical_download("/Acme/Study 1", "study1.zip")
+#' utils::unzip("study1.zip", exdir = "study1")
 #' }
 #' @export
 viya_clinical_download <- function(path, local_path, token = viya_token(),
@@ -158,12 +167,13 @@ viya_clinical_download <- function(path, local_path, token = viya_token(),
   h <- .viya_clinical_h(token, url)
   stopifnot(nzchar(local_path))
   it <- viya_clinical_item(path, token, url)
-  .viya_req(h, paste0("/clinicalRepository/repository/items/", it$id,
-                      "/content")) |>
-    httr2::req_method("POST") |>
-    httr2::req_perform() |> httr2::resp_body_raw() |>
-    writeBin(local_path)
-  message("downloaded ", path, " -> ", local_path, " (zip archive)")
+  resp <- .viya_req(h, paste0("/clinicalRepository/repository/items/", it$id,
+                              "/content")) |>
+    httr2::req_method("POST") |> httr2::req_perform()
+  writeBin(httr2::resp_body_raw(resp), local_path)
+  zipped <- identical(httr2::resp_content_type(resp), "application/zip")
+  message("downloaded ", path, " -> ", local_path,
+          if (zipped) " (zip archive)" else "")
   invisible(local_path)
 }
 

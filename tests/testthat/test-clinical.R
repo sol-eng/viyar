@@ -4,7 +4,7 @@
 # assert which endpoints were hit without also pinning the sequence they
 # were hit in. Every URL is appended to `seen$url`.
 .mock_clinical <- function(seen, item = NULL, pages = NULL, content = NULL,
-                           types = NULL) {
+                           types = NULL, content_type = "application/zip") {
   if (is.null(item))
     item <- list(id = "1", path = "/", typeId = "tenant",
                  primaryType = "CONTEXT", state = "ACTIVE", size = 0)
@@ -16,7 +16,7 @@
       return(httr2::response_json(status = 200, body = item))
     if (grepl("/content$", u))
       return(httr2::response(status = 200,
-                             headers = list("Content-Type" = "application/zip"),
+                             headers = list("Content-Type" = content_type),
                              body = content))
     if (grepl("/types", u))
       return(httr2::response_json(status = 200,
@@ -164,6 +164,21 @@ test_that("viya_clinical_list() returns a typed zero-row frame for an empty cont
                  "modified"))
 })
 
+test_that("viya_clinical_list() reports a container's size as NA, not -1", {
+  # Found live: contexts and folders carry `size = -1` -- "no size", not a
+  # byte count -- while files carry their real size.
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(
+    seen,
+    pages = list(.clin_page(list(
+      .clin_item("data", "2", size = -1),
+      .clin_item("hello.sas", "3", "FILE", "sasprogram", size = 42))))))
+
+  df <- viya_clinical_list("/", token = "t", url = .clin_url)
+
+  expect_equal(df$size, c(NA, 42))
+})
+
 test_that("viya_clinical_list() tolerates an item with no name", {
   # The repository root itself carries no `name` attribute -- only a
   # `path` of "/" -- so any item field can legitimately be absent.
@@ -200,6 +215,34 @@ test_that("viya_clinical_download() POSTs to the item's content endpoint", {
   hit <- grep("/repository/items/7/content$", seen$url)
   expect_length(hit, 1)
   expect_equal(seen$method[hit], "POST")
+})
+
+test_that("viya_clinical_download() writes a file's raw content, and says so", {
+  # Found live: a FILE comes back as its own bytes with its own media type
+  # (application/x-sas for a .sas program) -- only a container is zipped.
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(
+    seen,
+    item = list(id = "7", path = "/Acme/protocol.sas", primaryType = "FILE"),
+    content = charToRaw("proc print; run;\n"),
+    content_type = "application/x-sas"))
+
+  tmp <- withr::local_tempfile(fileext = ".sas")
+  msg <- testthat::capture_messages(
+    viya_clinical_download("/Acme/protocol.sas", tmp, token = "t", url = .clin_url))
+
+  expect_equal(readLines(tmp), "proc print; run;")
+  expect_false(any(grepl("zip", msg)))
+})
+
+test_that("viya_clinical_download() flags a container's download as a zip archive", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(
+    seen, content = as.raw(c(0x50, 0x4b, 0x05, 0x06))))
+
+  tmp <- withr::local_tempfile(fileext = ".zip")
+  expect_message(viya_clinical_download("/", tmp, token = "t", url = .clin_url),
+                 "zip archive")
 })
 
 test_that("viya_clinical_download() requires a local destination", {

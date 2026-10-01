@@ -16,8 +16,8 @@ repository root.}
 }
 \value{
 A data frame with columns `name`, `id`, `type` (`"CONTEXT"`,
-  `"FOLDER"` or `"FILE"`), `type_id`, `path`, `size` (bytes), `state`
-  and `modified`. An empty container gives a zero-row frame with those
+  `"FOLDER"` or `"FILE"`), `type_id`, `path`, `size` (bytes; `NA` for a
+  context or folder), `state` and `modified`. An empty container gives a zero-row frame with those
   same columns.
 }
 \description{
