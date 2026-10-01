@@ -120,6 +120,43 @@ viya_fs_list(h, "/nfs/homes/user/reports/2026")
 viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 ```
 
+## SAS Clinical Acceleration Repository
+
+A third, separate storage system, available only on clusters licensed for
+SAS Clinical Acceleration. It is a governed hierarchy — contexts
+(organizations, studies, deliveries, ...) hold folders, which hold files
+— and `viyar` reads it without a compute session, so these functions take
+`token`/`url` rather than a handle `h`:
+
+```r
+viya_clinical_item()                    # the repository root
+viya_clinical_list()                    # top-level contexts
+viya_clinical_list("/Acme/Study 1")     # everything inside a study
+viya_clinical_types()                   # what the type_id column means
+
+viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.zip")
+utils::unzip("protocol.zip", exdir = "protocol")
+```
+
+`viya_clinical_list()` returns `name`, `id`, `type` (`CONTEXT`, `FOLDER`
+or `FILE`), `type_id`, `path`, `size`, `state` and `modified`, and it
+pages through the whole container rather than stopping at the first
+page.
+
+Two things to know about downloads. The content endpoint always answers
+with a **ZIP archive**, whichever kind of item you ask for — a single
+file comes back zipped, and a context or folder comes back as a zip of
+everything under it. And writing to the repository (creating contexts,
+uploading files) is out of scope here: this release is read-only.
+
+If you already have a compute session, reuse its credentials rather than
+configuring them twice:
+
+```r
+h <- viya_session()
+viya_clinical_list("/", token = h$token, url = h$base)
+```
+
 ## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name
