@@ -51,7 +51,9 @@ viya_clinical_create <- function(path, type_id = "folder",
   sp <- .viya_clinical_split(path)
   stopifnot(is.character(type_id), length(type_id) == 1)
 
+  # The root is the one tenant; a new one can't be created under it.
   types <- viya_clinical_types(token, url)
+  types <- types[types$id != "tenant", , drop = FALSE]
   if (!type_id %in% types$id)
     stop("unknown type_id '", type_id, "'; container types on this ",
          "deployment: ", paste(types$id[!types$is_file], collapse = ", "))
@@ -185,7 +187,7 @@ viya_clinical_update <- function(path, name = NULL, description = NULL,
                                  token = viya_token(),
                                  url = viya_config()$url) {
   h <- .viya_clinical_h(token, url)
-  stopifnot(nzchar(path))
+  .viya_clinical_split(path)  # rejects the root and relative paths
   if (is.null(name) && is.null(description))
     stop("give `name`, `description`, or both")
   if (!is.null(name) &&
@@ -202,6 +204,9 @@ viya_clinical_update <- function(path, name = NULL, description = NULL,
   # item's current ETag first -- the same read-then-write as viya_fs_delete().
   etag <- .viya_req(h, uri) |> httr2::req_perform() |>
     httr2::resp_header("ETag")
+  if (is.null(etag))
+    stop("the server sent no ETag for '", path, "', so it can't be updated ",
+         "safely")
   out <- .viya_req(h, uri) |>
     httr2::req_method("PATCH") |>
     httr2::req_headers(`If-Match` = etag) |>
@@ -251,10 +256,14 @@ viya_clinical_checkout <- function(path, local_path = NULL, overwrite = FALSE,
                                    token = viya_token(),
                                    url = viya_config()$url) {
   h <- .viya_clinical_h(token, url)
-  stopifnot(nzchar(path))
+  .viya_clinical_split(path)  # rejects the root and relative paths
   if (!is.null(local_path)) {
     stopifnot(is.character(local_path), length(local_path) == 1,
               nzchar(local_path))
+    # Checked up front: otherwise the file is checked out and then the
+    # download fails, leaving it checked out.
+    if (!dir.exists(dirname(local_path)))
+      stop("the folder for '", local_path, "' does not exist")
     if (file.exists(local_path) && !isTRUE(overwrite))
       stop("'", local_path, "' already exists; pass overwrite = TRUE to ",
            "replace it")
@@ -284,7 +293,8 @@ viya_clinical_checkin <- function(path, local_path, comment = NULL,
                                   token = viya_token(),
                                   url = viya_config()$url) {
   h <- .viya_clinical_h(token, url)
-  stopifnot(nzchar(path), is.character(local_path), length(local_path) == 1)
+  .viya_clinical_split(path)  # rejects the root and relative paths
+  stopifnot(is.character(local_path), length(local_path) == 1)
   if (!file.exists(local_path)) stop("'", local_path, "' does not exist")
   if (!is.null(comment)) stopifnot(is.character(comment), length(comment) == 1)
 
@@ -323,7 +333,7 @@ viya_clinical_checkin <- function(path, local_path, comment = NULL,
 viya_clinical_undo_checkout <- function(path, token = viya_token(),
                                         url = viya_config()$url) {
   h <- .viya_clinical_h(token, url)
-  stopifnot(nzchar(path))
+  .viya_clinical_split(path)  # rejects the root and relative paths
   .viya_clinical_ws_action(h, path, "UNDO_CHECKOUT")
   message("undid check-out of ", path)
   invisible(viya_clinical_item(path, token, url))

@@ -23,7 +23,9 @@
 # Records every request in `seen` and answers by URL, so a test can assert
 # on what was sent without pinning the order of unrelated calls.
 # `seen$calls` holds "METHOD /path?query" strings; `seen$reqs` the requests.
-.cw_mock <- function(seen, items = .cw_items, content = charToRaw("v1\n")) {
+# `etag = NULL` makes GET /items/<id> send no ETag header.
+.cw_mock <- function(seen, items = .cw_items, content = charToRaw("v1\n"),
+                     etag = "\"etag-1\"") {
   function(req) {
     method <- req$method %||% "GET"
     u <- sub("^https://[^/]+", "", req$url)
@@ -45,8 +47,9 @@
       return(httr2::response(status = 204))
     if (method == "GET" &&
         grepl("^/clinicalRepository/repository/items/[^/?]+$", u))
-      return(httr2::response_json(headers = list(ETag = "\"etag-1\""),
-                                  body = list(id = basename(u))))
+      return(httr2::response_json(
+        headers = if (is.null(etag)) list() else list(ETag = etag),
+        body = list(id = basename(u))))
     if (method == "POST" && grepl("/content$", u))
       return(httr2::response(
         headers = list(`Content-Type` = "application/x-sas"), body = content))
@@ -105,6 +108,18 @@ test_that("viya_clinical_create() rejects an unknown type_id before writing", {
   expect_error(
     viya_clinical_create("/Acme/x", "studdy", token = "t", url = .cw_url),
     "unknown type_id 'studdy'.*organization, study, folder")
+  expect_false(any(grepl("^POST", seen$calls)))
+})
+
+test_that("viya_clinical_create() won't create a tenant, nor list it as a choice", {
+  # The root is the only tenant and can't be created under it.
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  err <- expect_error(
+    viya_clinical_create("/Acme/x", "tenant", token = "t", url = .cw_url),
+    "unknown type_id 'tenant'")
+  expect_false(grepl("tenant,|, tenant|: tenant", conditionMessage(err)))
   expect_false(any(grepl("^POST", seen$calls)))
 })
 
@@ -269,6 +284,17 @@ test_that("viya_clinical_update() rejects a name containing '/'", {
                "without '/'")
 })
 
+test_that("viya_clinical_update() needs an ETag from the server", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen, etag = NULL))
+
+  expect_error(
+    viya_clinical_update("/Acme/data/adsl.sas", name = "x.sas", token = "t",
+                         url = .cw_url),
+    "sent no ETag.*can't be updated safely")
+  expect_false(any(grepl("^PATCH", seen$calls)))
+})
+
 # ---- check out / check in / undo -------------------------------------
 
 .cw_ws <- "/clinicalRepository/workspaces/@currentUser"
@@ -391,4 +417,38 @@ test_that("viya_clinical_undo_checkout() sends UNDO_CHECKOUT", {
   expect_true(paste0("POST ", .cw_ws,
                      "/files?path=%2FAcme%2Fdata%2Fadsl.sas&action=UNDO_CHECKOUT")
               %in% seen$calls)
+})
+
+# ---- path and argument validation ------------------------------------
+
+test_that("update/checkout/checkin/undo reject the root before any request", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("x", src)
+
+  expect_error(viya_clinical_update("/", name = "x", token = "t",
+                                    url = .cw_url), "root")
+  expect_null(seen$calls)
+  expect_error(viya_clinical_checkout("/", token = "t", url = .cw_url),
+               "root")
+  expect_null(seen$calls)
+  expect_error(viya_clinical_checkin("/", src, token = "t", url = .cw_url),
+               "root")
+  expect_null(seen$calls)
+  expect_error(viya_clinical_undo_checkout("/", token = "t", url = .cw_url),
+               "root")
+  expect_null(seen$calls)
+})
+
+test_that("viya_clinical_checkout() checks the local folder before CHECK_OUT", {
+  # Otherwise the file is checked out and then the download fails.
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  dest <- file.path(withr::local_tempdir(), "no-such-dir", "adsl.sas")
+
+  expect_error(viya_clinical_checkout("/Acme/data/adsl.sas", dest,
+                                      token = "t", url = .cw_url),
+               "the folder for .* does not exist")
+  expect_null(seen$calls)
 })
