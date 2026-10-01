@@ -179,3 +179,45 @@ test_that("viya_clinical_upload() refuses to upload into a file", {
                "is a file")
   expect_false(any(grepl("^PUT", seen$calls)))
 })
+
+# ---- viya_clinical_delete() ------------------------------------------
+
+test_that("viya_clinical_delete() sends a plain DELETE (recycle bin) by default", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  out <- viya_clinical_delete("/Acme/data/adsl.sas", token = "t",
+                              url = .cw_url)
+
+  expect_true("DELETE /clinicalRepository/repository/items/file-1" %in%
+                seen$calls)
+  expect_equal(out$id, "file-1")
+})
+
+test_that("viya_clinical_delete(permanent = TRUE) adds ?permanent=true", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  viya_clinical_delete("/Acme/data", permanent = TRUE, token = "t",
+                       url = .cw_url)
+
+  expect_true(
+    "DELETE /clinicalRepository/repository/items/fld-1?permanent=true" %in%
+      seen$calls)
+})
+
+test_that("viya_clinical_delete() explains that a context needs permanent = TRUE", {
+  # Found live: a context can't go to the recycle bin ("Context types
+  # cannot be logically deleted"), so fail before sending anything.
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  expect_error(viya_clinical_delete("/Acme", token = "t", url = .cw_url),
+               "permanent = TRUE.*Permanently Delete Items")
+  expect_false(any(grepl("^DELETE", seen$calls)))
+})
+
+test_that("viya_clinical_delete() refuses the repository root", {
+  expect_error(viya_clinical_delete("/", token = "t", url = .cw_url),
+               "root")
+})

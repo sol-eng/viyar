@@ -120,3 +120,43 @@ viya_clinical_upload <- function(local_path, path, name = basename(local_path),
   message("uploaded ", local_path, " -> ", it$path %||% path)
   invisible(it)
 }
+
+#' Delete a Clinical Repository item
+#'
+#' By default, moves a file or folder to the recycle bin, where it can be
+#' recovered. A folder is deleted with everything in it, but not while any
+#' file inside is checked out -- undo or check in those first.
+#'
+#' Contexts (organizations, studies, ...) can't go to the recycle bin, so
+#' deleting one needs `permanent = TRUE`, and the "Permanently Delete Items"
+#' privilege.
+#'
+#' @param path Repository path of the item to delete.
+#' @param permanent Delete for good instead of moving to the recycle bin.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The item's metadata as it was before deletion, invisibly.
+#' @examples
+#' \dontrun{
+#' viya_clinical_delete("/Acme/Study 1/programs/old.sas")
+#' }
+#' @export
+viya_clinical_delete <- function(path, permanent = FALSE,
+                                 token = viya_token(),
+                                 url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  .viya_clinical_split(path)  # rejects the root and relative paths
+  it <- viya_clinical_item(path, token, url)
+  # Found live: the server answers "Context types cannot be logically
+  # deleted" here; say what to do instead.
+  if (identical(it$primaryType, "CONTEXT") && !isTRUE(permanent))
+    stop("'", path, "' is a context, and contexts can't go to the recycle ",
+         "bin. Pass permanent = TRUE to delete it for good (needs the ",
+         "\"Permanently Delete Items\" privilege).")
+  .viya_req(h, paste0(.viya_clinical_item_uri(it$id),
+                      if (isTRUE(permanent)) "?permanent=true" else "")) |>
+    httr2::req_method("DELETE") |> httr2::req_perform()
+  message("deleted ", path,
+          if (isTRUE(permanent)) " permanently" else " (to the recycle bin)")
+  invisible(it)
+}
