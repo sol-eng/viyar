@@ -66,6 +66,21 @@ viya_download <- function(h, viya_path, local_path) {
   invisible(local_path)
 }
 
+# Deletes every child file under folder_uri, walking child folders
+# depth-first. Found live: recursive=true deletes child folders but answers
+# 409 "not empty" while any child file remains. Reference members are
+# skipped -- only child members block a folder delete.
+.viya_delete_child_files <- function(h, folder_uri) {
+  mem <- .viya_req(h, paste0(folder_uri, "/members?limit=500")) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  for (m in mem$items) {
+    if (!identical(m$type, "child")) next
+    if (identical(m$contentType, "folder")) .viya_delete_child_files(h, m$uri)
+    else .viya_req(h, m$uri) |> httr2::req_method("DELETE") |> httr2::req_perform()
+  }
+  invisible(NULL)
+}
+
 .viya_folder_or_null <- function(h, folder_path) {
   tryCatch(.viya_folder(h, folder_path), error = function(e) NULL)
 }
@@ -98,9 +113,12 @@ viya_delete_file <- function(h, viya_path) {
 
 #' Delete a folder from SAS Content
 #'
-#' Deletes `path` and, if it isn't empty, everything under it
-#' (`recursive=true` is always sent -- it's a no-op for an empty folder
-#' and required for a non-empty one).
+#' Deletes `path` and, if it isn't empty, everything under it. Files in
+#' the tree are deleted first, one by one, because the Folders API's
+#' `recursive=true` removes child folders but refuses (HTTP 409) a tree
+#' that still holds a file. Reference members (shortcuts to content that
+#' lives elsewhere) are left alone: they don't block the delete, and the
+#' content they point to isn't part of this folder.
 #'
 #' @param h A `viyar` handle from [viya_session()].
 #' @param path Full Viya folder path to delete, e.g. `"/Public/Reports"`.
@@ -113,6 +131,7 @@ viya_delete_file <- function(h, viya_path) {
 viya_delete_folder <- function(h, path) {
   stopifnot(inherits(h, "viyar"), nzchar(path))
   fld <- .viya_folder(h, path)
+  .viya_delete_child_files(h, paste0("/folders/folders/", fld$id))
   .viya_req(h, paste0("/folders/folders/", fld$id, "?recursive=true")) |>
     httr2::req_method("DELETE") |> httr2::req_perform()
   message("deleted folder ", path)
