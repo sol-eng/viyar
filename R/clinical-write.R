@@ -107,8 +107,6 @@ viya_clinical_upload <- function(local_path, path, name = basename(local_path),
   stopifnot(is.character(local_path), length(local_path) == 1,
             nzchar(path), nzchar(name))
   if (!file.exists(local_path)) stop("'", local_path, "' does not exist")
-  # Normalize the local path to match what curl::form_file() would do.
-  local_path <- normalizePath(local_path)
 
   parent <- viya_clinical_item(path, token, url)
   if (identical(parent$primaryType, "FILE"))
