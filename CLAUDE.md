@@ -112,9 +112,16 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   Files/Folders service). Both deletes resolve the target to its
   resource `id`/`uri` first (via `.viya_folder()` or a folder's
   `members` listing), then `DELETE` by that id -- no `ETag`/`If-Match`
-  needed here (unlike `R/fs.R` below). `viya_delete_folder()` always
-  sends `?recursive=true` (a no-op for an empty folder, required for a
-  non-empty one) rather than branching on emptiness. `.viya_folder()`
+  needed here (unlike `R/fs.R` below). `viya_delete_folder()` first
+  deletes every child *file* in the tree through its own `/files/files/`
+  URI (`.viya_delete_child_files()`, depth-first), then sends one
+  `DELETE ...?recursive=true` for the folder. Found live on `caf`
+  (2026-10-01): `recursive=true` does delete child folders, but a tree
+  that still holds a child file answers `409 You cannot delete the
+  folder because it is not empty`, even though SAS's `folders.md` says
+  `recursive=true` removes "the folder and its contents". Reference
+  members are skipped: they don't block the delete, and the content
+  they point to isn't part of the folder. `.viya_folder()`
   accepts a real path (resolved via `@item?path=`) or a "@"-prefixed
   Viya Folders API well-known delegate (`"@myFolder"`, `"@public"`,
   ...), resolved by hitting its reserved URI directly instead --
@@ -372,11 +379,8 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   (correctly) fail rather than delete the wrong version — this is the
   API's own optimistic-concurrency design, not a `viyar` bug, but worth
   knowing if a delete call intermittently 412/428s under concurrent
-  access to the same path. Also: `viya_delete_file()`/
-  `viya_delete_folder()` (SAS Content) were designed and mocked-tested
-  against documented/previously-confirmed behavior only — this PR had no
-  live cluster access, so double-deleting an already-gone resource,
-  deleting a folder mid-populate, and the exact `viya_fs_delete()`
-  `ETag` format on a real cluster are all unverified beyond the mocked
-  tests; `test-live-fs.R`/`test-live-files.R` are written and ready for
-  whoever runs the live tier next.
+  access to the same path. `test-live-fs.R`/`test-live-files.R` passed
+  in full on `caf` (2026-10-01) after the `viya_delete_folder()` fix
+  above. Still unverified live: double-deleting an already-gone
+  resource, and deleting a folder while something else is populating
+  it.

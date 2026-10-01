@@ -101,22 +101,62 @@ test_that("viya_delete_folder resolves the folder then DELETEs it with recursive
                       base = "https://viya.example.com"), class = "viyar")
 
   resp_folder <- httr2::response_json(status = 200, body = list(id = "reports-id", name = "Reports"))
+  resp_members <- httr2::response_json(status = 200, body = list(items = list()))
   resp_delete <- httr2::response(status = 204)
 
-  seq <- list(resp_folder, resp_delete)
+  seq <- list(resp_folder, resp_members, resp_delete)
   i <- 0
   seen <- NULL
   httr2::local_mocked_responses(function(req) {
     i <<- i + 1
-    if (i == 2) seen <<- req
+    if (i == 3) seen <<- req
     seq[[i]]
   })
 
   out <- viya_delete_folder(h, "/Public/Reports")
   expect_null(out)
-  expect_equal(i, 2)
+  expect_equal(i, 3)
   expect_match(seen$url, "/folders/folders/reports-id\\?recursive=true$")
   expect_equal(seen$method, "DELETE")
+})
+
+# Found live: recursive=true removes child folders but not child files --
+# a folder holding a file still answers 409 "not empty". So every file in
+# the tree is deleted through its own Files service URI first.
+test_that("viya_delete_folder deletes child files (at any depth) before the folder itself", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  members <- list(
+    "top-id" = list(
+      list(name = "a.txt", type = "child", contentType = "file",
+           uri = "/files/files/file-a"),
+      list(name = "shortcut", type = "reference", contentType = "file",
+           uri = "/files/files/not-ours"),
+      list(name = "nested", type = "child", contentType = "folder",
+           uri = "/folders/folders/nested-id")),
+    "nested-id" = list(
+      list(name = "b.txt", type = "child", contentType = "file",
+           uri = "/files/files/file-b")))
+
+  calls <- character()
+  httr2::local_mocked_responses(function(req) {
+    calls <<- c(calls, paste(req$method %||% "GET", sub("^https://[^/]+", "", req$url)))
+    path <- sub("^https://[^/]+", "", req$url)
+    if (grepl("@item", path))
+      return(httr2::response_json(body = list(id = "top-id")))
+    id <- sub("^/folders/folders/([^/?]+)/members.*", "\\1", path)
+    if (id %in% names(members))
+      return(httr2::response_json(body = list(items = members[[id]])))
+    httr2::response(status = 204)
+  })
+
+  viya_delete_folder(h, "/Public/Reports")
+
+  deletes <- grep("^DELETE ", calls, value = TRUE)
+  expect_equal(deletes, c("DELETE /files/files/file-a",
+                          "DELETE /files/files/file-b",
+                          "DELETE /folders/folders/top-id?recursive=true"))
 })
 
 test_that("viya_delete_folder validates its arguments", {

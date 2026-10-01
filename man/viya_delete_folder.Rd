@@ -15,9 +15,12 @@ viya_delete_folder(h, path)
 `NULL`, invisibly.
 }
 \description{
-Deletes `path` and, if it isn't empty, everything under it
-(`recursive=true` is always sent -- it's a no-op for an empty folder
-and required for a non-empty one).
+Deletes `path` and, if it isn't empty, everything under it. Files in
+the tree are deleted first, one by one, because the Folders API's
+`recursive=true` removes child folders but refuses (HTTP 409) a tree
+that still holds a file. Reference members (shortcuts to content that
+lives elsewhere) are left alone: they don't block the delete, and the
+content they point to isn't part of this folder.
 }
 \examples{
 \dontrun{

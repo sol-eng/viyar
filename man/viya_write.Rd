@@ -4,7 +4,7 @@
 \alias{viya_write}
 \title{Write an R data.frame to a SAS dataset}
 \usage{
-viya_write(h, df, libref, table, staging_folder = "/Public", cleanup = TRUE)
+viya_write(h, df, libref, table, staging_folder = "@myFolder", cleanup = TRUE)
 }
 \arguments{
 \item{h}{A `viyar` handle from [viya_session()].}
@@ -15,7 +15,9 @@ viya_write(h, df, libref, table, staging_folder = "/Public", cleanup = TRUE)
 
 \item{table}{Target dataset name.}
 
-\item{staging_folder}{Viya folder used for the temporary CSV.}
+\item{staging_folder}{Viya folder used for the temporary CSV -- a real
+path (e.g. `"/Public"`) or a well-known delegate like `"@myFolder"`
+or `"@public"`.}
 
 \item{cleanup}{Delete the staged CSV afterwards.}
 }
@@ -25,6 +27,19 @@ The [viya_submit()] result of the import job, invisibly.
 \description{
 Stages the data as CSV through the Viya Files service and imports it in
 the compute session using `FILENAME FILESRVC` + `PROC IMPORT`.
+}
+\details{
+The staging file lands in the caller's own private `"@myFolder"` by
+default (a Viya Folders API well-known delegate -- SAS's own
+documentation describes it as "not visible to other users except
+administrative users"), not the shared `/Public` folder every other
+user of the deployment can see and write to. The SAS-side `FILENAME
+FILESRVC` reference doesn't need `staging_folder`'s path at all: it
+addresses the uploaded file directly by its own resource URI
+(`FILESRVC '/files/files/<uuid>'`, FILESRVC's "Form 1" per SAS's
+Global Statements Reference), which is also more robust than the
+folder-path/name-matching alternative used by the previous
+`/Public`-based design.
 }
 \examples{
 \dontrun{
