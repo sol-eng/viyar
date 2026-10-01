@@ -7,7 +7,7 @@ Branch: `feat-clinical-write`, stacked on `feat-clinical-repository` (PR #7)
 
 Let an R user change content in the SAS Clinical Acceleration Repository:
 create containers, add files, check a file out, edit it locally and check it
-back in with a comment, undo a check-out, rename, lock, and delete.
+back in with a comment, undo a check-out, rename, and delete.
 
 PR #7 ships the read-only half (`R/clinical.R`). This work adds the write
 half.
@@ -23,7 +23,8 @@ create versioned files.
   to a local path, and check-in uploads a local path. There are no
   workspace functions in the public API.
 - **Scope:** check out, check in, undo check-out, upload, create
-  containers, delete, rename/edit attributes, lock/unlock.
+  containers, delete, rename/edit attributes. Lock/unlock was in scope
+  but is dropped (see probe 2).
 - **Branching:** stacked on PR #7. The PR targets `feat-clinical-repository`
   until #7 merges, then moves to `main`.
 
@@ -58,23 +59,32 @@ disagree.
 - The test account lacks "Enable/Manage Versioning" (a versioned check-in
   gets 403; an unversioned one works) and "Permanently Delete Items".
 
-## Not yet confirmed (probe before coding)
+## Probe results (run 2026-10-01, before coding)
 
-1. **Rename / edit:** `PATCH /repository/items/{id}` with `If-Match`. The
-   spec documents it; the body shape (flat fields or nested `attributes`)
-   is unclear.
-2. **Lock / unlock:** there is no dedicated endpoint. Items carry a
-   `locked` field and there is a "Manage Locking" privilege. The likeliest
-   route is a `PATCH` of `locked`.
-3. **Check-in of a checked-out file:** confirmed only for a new file. Check
-   that `CHECK_OUT` → workspace `PUT` → `CHECK_IN` updates the existing
-   repository file's content and comment.
-4. **Check-out state:** whether `checkedOut` and the check-out owner show on
-   the repository item afterwards. The tests need this to assert on.
-
-If probe 2 finds no working lock route, or the test account lacks the
-privilege, lock/unlock is **dropped** from this PR and the reason recorded
-in CLAUDE.md. Nothing ships that has only been tested against mocks.
+1. **Rename / edit works.** `PATCH /repository/items/{id}` takes a **flat**
+   JSON body (`{"name": "..."}`, `{"description": "..."}`) and needs
+   `If-Match` with the item's current `ETag` (taken from a `GET` of the
+   item). Without it: `428 The request header field "If-Match" is
+   required.` Success is `200`, with the updated item as the body.
+2. **Lock / unlock is dropped.** `PATCH {"locked": true}` answers `400
+   Property "locked" is not a valid property on the resource.` No lock
+   endpoint exists: `POST`/`PUT .../lock`, `PUT .../locked` and
+   `.../state?value=locked` all `404`. The spec defines no lock action. The
+   reason goes in CLAUDE.md.
+3. **Check-in of a checked-out file works.** `CHECK_OUT` → workspace `PUT`
+   → `CHECK_IN&comment=` replaces the repository content, sets
+   `fileComment` and clears the check-out.
+4. **Check-out state is visible.** After `CHECK_OUT` the repository item
+   carries `checkedOut = TRUE`, `checkedOutBy` and `checkedOutTimestamp`.
+   Error cases:
+   - `CHECK_OUT` of a file you already have checked out: `409 File was
+     not checked out because it is already checked out by you.`
+   - `CHECK_IN` or `UNDO_CHECKOUT` of a file that isn't checked out: `400
+     ... is not currently checked out, is not a file or does not exist.`
+   - `UNDO_CHECKOUT` returns `200` with an empty body; `CHECK_OUT` and
+     `CHECK_IN` return the workspace file as JSON.
+   - `CHECK_OUT` creates the workspace folders the file needs, so the
+     workspace `PUT` at check-in never hits a missing parent.
 
 ## Public API
 
@@ -91,7 +101,6 @@ updated metadata (the list `viya_clinical_item()` returns), invisibly.
 | `viya_clinical_undo_checkout(path)` | Releases the check-out. Local files are untouched. | `UNDO_CHECKOUT` |
 | `viya_clinical_delete(path, permanent = FALSE)` | Deletes an item, by default to the recycle bin. | `DELETE .../{id}` |
 | `viya_clinical_update(path, name = NULL, description = NULL)` | Renames an item and/or edits its description. | `PATCH` with `If-Match` |
-| `viya_clinical_lock(path)`, `viya_clinical_unlock(path)` | Locks or unlocks a file. Ships only if probe 2 succeeds. | to be confirmed |
 
 `type_id` is checked against `viya_clinical_types()` before any write, so a
 typo fails with the valid choices listed, not a server 400.
@@ -150,8 +159,7 @@ found live gets its own test:
   when a test fails. Deleted folders go to the recycle bin.
 - **Coverage:** create a folder → upload a `.sas` file → list it → check out
   and download → edit locally → check in with a comment → confirm the new
-  content and comment → check out again and undo → rename → lock/unlock (if
-  shipped) → delete.
+  content and comment → check out again and undo → rename → delete.
 - Tests that need a privilege the account lacks call `skip()` with the
   privilege named.
 - `skip_if_no_clinical()` gates the whole file, as for the read tests.
@@ -164,8 +172,8 @@ against the test cluster.
 - Roxygen for every exported function, with examples.
 - A README section on editing repository files.
 - CLAUDE.md: move the write facts from "confirmed live, not wrapped" to the
-  `R/clinical-write.R` entry; record the probe results; record any dropped
-  function and why.
+  `R/clinical-write.R` entry; record the probe results; record why
+  lock/unlock was dropped.
 
 ## Known leftovers
 
