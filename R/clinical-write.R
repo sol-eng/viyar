@@ -76,3 +76,49 @@ viya_clinical_create <- function(path, type_id = "folder",
   message("created ", type_id, " ", path)
   invisible(it)
 }
+
+#' Upload a new file to the Clinical Repository
+#'
+#' Adds a local file to a context or folder. This is for files that don't
+#' exist in the repository yet; to change an existing file, check it out
+#' with [viya_clinical_checkout()] and back in with
+#' [viya_clinical_checkin()].
+#'
+#' A deployment can refuse some file extensions. The server's own message
+#' says so (for example, "Files with extension "R" cannot be uploaded").
+#'
+#' @param local_path Path of the local file to upload.
+#' @param path Repository path of the context or folder to upload into.
+#' @param name Name to store the file under; defaults to `local_path`'s
+#'   own file name.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The new file's metadata (see [viya_clinical_item()]),
+#'   invisibly.
+#' @examples
+#' \dontrun{
+#' viya_clinical_upload("adsl.sas", "/Acme/Study 1/programs")
+#' }
+#' @export
+viya_clinical_upload <- function(local_path, path, name = basename(local_path),
+                                 token = viya_token(),
+                                 url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(is.character(local_path), length(local_path) == 1,
+            nzchar(path), nzchar(name))
+  if (!file.exists(local_path)) stop("'", local_path, "' does not exist")
+  # Normalize the local path to match what curl::form_file() would do.
+  local_path <- normalizePath(local_path)
+
+  parent <- viya_clinical_item(path, token, url)
+  if (identical(parent$primaryType, "FILE"))
+    stop("'", path, "' is a file; give the context or folder to upload into")
+  # Found live: the stored name is the file part's own filename -- a
+  # separate `filename` form field is ignored.
+  it <- .viya_req(h, paste0(.viya_clinical_item_uri(parent$id), "/content")) |>
+    httr2::req_method("PUT") |>
+    httr2::req_body_multipart(file = curl::form_file(local_path, name = name)) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  message("uploaded ", local_path, " -> ", it$path %||% path)
+  invisible(it)
+}

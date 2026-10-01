@@ -125,3 +125,57 @@ test_that("viya_clinical_create() rejects the root and relative paths", {
   expect_error(viya_clinical_create("Acme/x", token = "t", url = .cw_url),
                "absolute")
 })
+
+# ---- viya_clinical_upload() ------------------------------------------
+
+test_that("viya_clinical_upload() PUTs one multipart file part to the container", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("proc print; run;", src)
+
+  viya_clinical_upload(src, "/Acme/data", token = "t", url = .cw_url)
+
+  req <- .cw_find(seen, "^PUT /clinicalRepository/repository/items/fld-1/content$")
+  expect_equal(req$body$type, "multipart")
+  expect_equal(names(req$body$data), "file")
+  expect_equal(req$body$data$file$path, normalizePath(src))
+  expect_equal(req$body$data$file$name, basename(src))
+})
+
+test_that("viya_clinical_upload() stores the file under `name`, on the file part", {
+  # Found live: the stored name is the file part's own filename; a separate
+  # `filename` form field is ignored.
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("proc print; run;", src)
+
+  viya_clinical_upload(src, "/Acme/data", name = "adsl.sas", token = "t",
+                       url = .cw_url)
+
+  req <- .cw_find(seen, "^PUT .*/items/fld-1/content$")
+  expect_equal(req$body$data$file$name, "adsl.sas")
+})
+
+test_that("viya_clinical_upload() checks the local file before any request", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  expect_error(viya_clinical_upload("no-such-file.sas", "/Acme/data",
+                                    token = "t", url = .cw_url),
+               "does not exist")
+  expect_null(seen$calls)
+})
+
+test_that("viya_clinical_upload() refuses to upload into a file", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+  src <- withr::local_tempfile(fileext = ".sas")
+  writeLines("x", src)
+
+  expect_error(viya_clinical_upload(src, "/Acme/data/adsl.sas", token = "t",
+                                    url = .cw_url),
+               "is a file")
+  expect_false(any(grepl("^PUT", seen$calls)))
+})
