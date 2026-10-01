@@ -3,6 +3,7 @@
 S3method(print,viyar)
 export(viya_caslib_files)
 export(viya_caslib_tables)
+export(viya_clinical_create)
 export(viya_clinical_download)
 export(viya_clinical_item)
 export(viya_clinical_list)
