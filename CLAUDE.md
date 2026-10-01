@@ -249,7 +249,11 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   flat (`{"name": ...}`). Found live: `CHECK_OUT` of a file you already
   hold gets `409`, and `CHECK_IN`/`UNDO_CHECKOUT` of a file that isn't
   checked out gets `400`; a folder holding a checked-out file can't be
-  deleted (`400 The file is checked out`).
+  deleted (`400 The file is checked out`). `.viya_req()` retries
+  429/503, so a write the server completed before a 503 can be retried
+  and answered with 409 (e.g. a second CHECK_OUT, "already checked out by
+  you"); if a write 409s after a transient 503, check the item's state
+  before retrying by hand.
   **Lock/unlock is not implemented, deliberately:** items carry a
   `locked` field and there is a "Manage Locking" privilege, but
   `PATCH {"locked": true}` answers `400 Property "locked" is not a valid

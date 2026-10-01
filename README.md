@@ -162,7 +162,7 @@ f <- "/Acme/Study 1/programs/adsl.sas"
 viya_clinical_checkout(f, "adsl.sas", overwrite = TRUE)
 # ...edit adsl.sas...
 viya_clinical_checkin(f, "adsl.sas", comment = "Derive TRTSDT from EX")
-viya_clinical_undo_checkout(f)                          # or give up instead
+# or, to give up instead of checking in: viya_clinical_undo_checkout(f)
 
 viya_clinical_update(f, name = "adsl_v1.sas")           # rename
 viya_clinical_delete("/Acme/Study 1/programs/adsl_v1.sas")  # to the recycle bin

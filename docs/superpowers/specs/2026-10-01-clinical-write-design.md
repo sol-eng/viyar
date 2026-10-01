@@ -154,9 +154,10 @@ found live gets its own test:
 - **Fixture:** one long-lived organization, `/viyar_live_tests`. The first
   run creates it (admin); later runs reuse it. A run never creates another
   organization, because the test account cannot delete one.
-- **Per run:** create `/viyar_live_tests/run_<timestamp>`, work inside it,
-  and delete it at the end in a `withr::defer()`, so it is removed even
-  when a test fails. Deleted folders go to the recycle bin.
+- **Per test:** each test creates its own
+  `/viyar_live_tests/run_<timestamp>_<random>` folder, works inside it,
+  and deletes it when the test ends in a `withr::defer()`, so it is
+  removed even when a test fails. Deleted folders go to the recycle bin.
 - **Coverage:** create a folder → upload a `.sas` file → list it → check out
   and download → edit locally → check in with a comment → confirm the new
   content and comment → check out again and undo → rename → delete.
