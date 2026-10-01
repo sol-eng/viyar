@@ -145,8 +145,8 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `viya_clinical_download()`/`viya_clinical_types()`: a *third* storage
   system, the SAS Clinical Acceleration Repository (separately licensed;
   absent on clusters without it, hence `skip_if_no_clinical()` in
-  `helper-live.R` probing the service root rather than assuming). Read
-  only in this release -- no create/upload/delete. Notes, with **live**
+  `helper-live.R` probing the service root rather than assuming). Read-only;
+  writes live in `R/clinical-write.R` (next entry). Notes, with **live**
   meaning confirmed against a live CA-enabled cluster and
   **inferred** meaning taken from developer.sas.com only:
   - **live** The routed prefix is `/clinicalRepository`, but the service's
@@ -191,7 +191,7 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
     `/clinicalRepository/types` is the exception: it ignores `start`
     and `limit` entirely and returns all 50 types in one page.
   - **live** Writes (all confirmed 2026-10-01 with a Clinical
-    Administrators account on `caf`; none are wrapped yet):
+    Administrators account on `caf`; wrapped in `R/clinical-write.R`):
     - Creating a top-level context (`organization` under the root, id
       `"1"`) needs the `X-SAS-Clinical-Authorization: ADMIN` header *and*
       Clinical Administrators membership. Inside a context you created,
@@ -236,6 +236,29 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
     populated now, but its files are unversioned (the test account lacks
     the versioning privilege), so the versions endpoints still have
     nothing to return there.
+- `R/clinical-write.R` — `viya_clinical_create()`/`_upload()`/
+  `_checkout()`/`_checkin()`/`_undo_checkout()`/`_update()`/`_delete()`:
+  writes to the Clinical Repository, built on the request shapes listed
+  under `R/clinical.R` above. Check-out and check-in go through the
+  server's per-user workspace, which the API never exposes:
+  `viya_clinical_checkin()` uploads the local copy to the workspace path
+  that mirrors the repository path, then sends `CHECK_IN`. It checks
+  `checkedOut` first, so it never touches the workspace for a file that
+  isn't checked out. `viya_clinical_update()` reads the item's `ETag` and
+  sends it as `If-Match` (a `PATCH` without it gets `428`); the body is
+  flat (`{"name": ...}`). Found live: `CHECK_OUT` of a file you already
+  hold gets `409`, and `CHECK_IN`/`UNDO_CHECKOUT` of a file that isn't
+  checked out gets `400`; a folder holding a checked-out file can't be
+  deleted (`400 The file is checked out`).
+  **Lock/unlock is not implemented, deliberately:** items carry a
+  `locked` field and there is a "Manage Locking" privilege, but
+  `PATCH {"locked": true}` answers `400 Property "locked" is not a valid
+  property`, `.../lock`, `.../locked` and `.../state?value=locked` all
+  `404`, and the OpenAPI spec defines no lock action. Version history
+  (`/versions`) is being built on a separate branch. Live tests
+  (`test-live-clinical-write.R`) work inside one long-lived organization,
+  `/viyar_live_tests`, one folder per test, because the test account
+  can't delete an organization.
 - `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
   `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
   always fetches the log internally for diagnosis, defaults `output` to

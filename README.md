@@ -146,9 +146,33 @@ page.
 
 A file downloads as itself. A context or folder downloads as a **ZIP
 archive** of everything under it. The service sends no file name either
-way, so give `local_path` the full destination name. Writing to the
-repository (creating contexts, uploading files) is out of scope here:
-this release is read-only.
+way, so give `local_path` the full destination name. Writing is covered
+below.
+
+### Changing repository content
+
+Add new files with `viya_clinical_upload()`. To change an existing file,
+check it out, edit your local copy, and check it back in:
+
+```r
+viya_clinical_create("/Acme/Study 1/programs")          # a folder
+viya_clinical_upload("adsl.sas", "/Acme/Study 1/programs")
+
+f <- "/Acme/Study 1/programs/adsl.sas"
+viya_clinical_checkout(f, "adsl.sas", overwrite = TRUE)
+# ...edit adsl.sas...
+viya_clinical_checkin(f, "adsl.sas", comment = "Derive TRTSDT from EX")
+viya_clinical_undo_checkout(f)                          # or give up instead
+
+viya_clinical_update(f, name = "adsl_v1.sas")           # rename
+viya_clinical_delete("/Acme/Study 1/programs/adsl_v1.sas")  # to the recycle bin
+```
+
+What you can do depends on your repository permissions. Creating a
+top-level organization needs Clinical Administrators membership, and
+deleting a context needs `permanent = TRUE` plus the "Permanently Delete
+Items" privilege. A deployment can also refuse some file extensions; the
+error message names the extension.
 
 If you already have a compute session, reuse its credentials rather than
 configuring them twice:
