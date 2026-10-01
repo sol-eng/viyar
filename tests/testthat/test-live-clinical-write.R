@@ -33,15 +33,15 @@ test_that("check out, edit, then check in with a comment", {
   f <- viya_clinical_upload(src, dir, name = "adsl.sas")
 
   local <- withr::local_tempfile(fileext = ".sas")
-  it <- viya_clinical_checkout(f$path, local)
   withr::defer(try(viya_clinical_undo_checkout(f$path), silent = TRUE))
+  it <- viya_clinical_checkout(f$path, local)
   expect_true(it$checkedOut)
   expect_true(nzchar(it$checkedOutBy))
   expect_equal(readLines(local), "/* v1 */")
 
   writeLines("/* v2 */", local)
   it <- viya_clinical_checkin(f$path, local, comment = "v2 from viyar live test")
-  expect_false(it$checkedOut)
+  expect_false(isTRUE(it$checkedOut))
   expect_equal(it$fileComment, "v2 from viyar live test")
 
   back <- withr::local_tempfile(fileext = ".sas")
@@ -56,13 +56,13 @@ test_that("undo check-out releases the file, and misuse gets a clear error", {
   writeLines("/* v1 */", src)
   f <- viya_clinical_upload(src, dir, name = "adae.sas")
 
-  it <- viya_clinical_checkout(f$path)
   withr::defer(try(viya_clinical_undo_checkout(f$path), silent = TRUE))
+  it <- viya_clinical_checkout(f$path)
   expect_true(it$checkedOut)
   expect_error(viya_clinical_checkout(f$path), "already checked out")
 
   it <- viya_clinical_undo_checkout(f$path)
-  expect_false(it$checkedOut)
+  expect_false(isTRUE(it$checkedOut))
   expect_error(viya_clinical_undo_checkout(f$path), "not currently checked out")
   expect_error(viya_clinical_checkin(f$path, src), "not checked out")
 })

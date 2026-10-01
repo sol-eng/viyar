@@ -29,10 +29,12 @@ skip_if_no_clinical <- function() {
 .viya_live_clinical_org <- "/viyar_live_tests"
 
 local_clinical_folder <- function(env = parent.frame()) {
+  # Only a 404 means "missing". Any other failure (503, 401, timeout) must
+  # propagate, never lead to creating an organization.
   have_org <- tryCatch({
     viya_clinical_item(.viya_live_clinical_org)
     TRUE
-  }, error = function(e) FALSE)
+  }, error = function(e) if (inherits(e, "httr2_http_404")) FALSE else stop(e))
   if (!have_org)
     viya_clinical_create(.viya_live_clinical_org, "organization")
   path <- paste0(.viya_live_clinical_org, "/run_",
@@ -42,6 +44,10 @@ local_clinical_folder <- function(env = parent.frame()) {
   # Found live: a folder holding a checked-out file can't be deleted, so a
   # test that checks a file out must defer its own undo. Deferred calls run
   # last-in-first-out, so that undo runs before this delete.
-  withr::defer(try(viya_clinical_delete(path), silent = TRUE), envir = env)
+  withr::defer(
+    tryCatch(viya_clinical_delete(path),
+             error = function(e)
+               warning("cleanup of ", path, " failed: ", conditionMessage(e))),
+    envir = env)
   path
 }
