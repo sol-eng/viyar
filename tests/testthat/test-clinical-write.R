@@ -221,3 +221,50 @@ test_that("viya_clinical_delete() refuses the repository root", {
   expect_error(viya_clinical_delete("/", token = "t", url = .cw_url),
                "root")
 })
+
+# ---- viya_clinical_update() ------------------------------------------
+
+test_that("viya_clinical_update() PATCHes a flat body with the item's ETag", {
+  # Found live: the body is flat ({"name": ...}), and leaving out If-Match
+  # gets 428.
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  viya_clinical_update("/Acme/data/adsl.sas", name = "adsl_v2.sas",
+                       token = "t", url = .cw_url)
+
+  get_i   <- grep("^GET /clinicalRepository/repository/items/file-1$", seen$calls)
+  patch_i <- grep("^PATCH /clinicalRepository/repository/items/file-1$", seen$calls)
+  expect_length(patch_i, 1)
+  expect_true(length(get_i) > 0 && min(get_i) < patch_i)
+  req <- seen$reqs[[patch_i]]
+  expect_equal(req$headers[["If-Match"]], "\"etag-1\"")
+  expect_equal(req$body$data, list(name = "adsl_v2.sas"))
+})
+
+test_that("viya_clinical_update() can change only the description", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  viya_clinical_update("/Acme/data", description = "ADaM programs",
+                       token = "t", url = .cw_url)
+
+  req <- .cw_find(seen, "^PATCH .*/items/fld-1$")
+  expect_equal(req$body$data, list(description = "ADaM programs"))
+})
+
+test_that("viya_clinical_update() needs something to change", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.cw_mock(seen))
+
+  expect_error(viya_clinical_update("/Acme/data", token = "t", url = .cw_url),
+               "name.*description")
+  expect_null(seen$calls)
+})
+
+test_that("viya_clinical_update() rejects a name containing '/'", {
+  # A rename can't move an item; a '/' in `name` would suggest it can.
+  expect_error(viya_clinical_update("/Acme/data", name = "x/y", token = "t",
+                                    url = .cw_url),
+               "without '/'")
+})

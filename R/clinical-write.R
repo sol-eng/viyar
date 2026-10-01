@@ -160,3 +160,53 @@ viya_clinical_delete <- function(path, permanent = FALSE,
           if (isTRUE(permanent)) " permanently" else " (to the recycle bin)")
   invisible(it)
 }
+
+#' Rename a Clinical Repository item or edit its description
+#'
+#' Changes an item's name, its description, or both. The item stays where
+#' it is; a rename can't move it to another container.
+#'
+#' @param path Repository path of the item.
+#' @param name New name, without any `/`. `NULL` (the default) leaves the
+#'   name unchanged.
+#' @param description New description. `NULL` (the default) leaves it
+#'   unchanged.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return The updated item's metadata (see [viya_clinical_item()]),
+#'   invisibly. After a rename, its `path` is the new path.
+#' @examples
+#' \dontrun{
+#' viya_clinical_update("/Acme/Study 1/programs/adsl.sas", name = "adsl_v1.sas")
+#' viya_clinical_update("/Acme/Study 1", description = "Phase III, ADaM 1.3")
+#' }
+#' @export
+viya_clinical_update <- function(path, name = NULL, description = NULL,
+                                 token = viya_token(),
+                                 url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(nzchar(path))
+  if (is.null(name) && is.null(description))
+    stop("give `name`, `description`, or both")
+  if (!is.null(name) &&
+      (!is.character(name) || length(name) != 1 || !nzchar(name) ||
+       grepl("/", name, fixed = TRUE)))
+    stop("`name` must be a bare item name, without '/'")
+  if (!is.null(description))
+    stopifnot(is.character(description), length(description) == 1)
+  body <- Filter(Negate(is.null), list(name = name, description = description))
+
+  it  <- viya_clinical_item(path, token, url)
+  uri <- .viya_clinical_item_uri(it$id)
+  # Found live: PATCH without If-Match is refused with 428, so read the
+  # item's current ETag first -- the same read-then-write as viya_fs_delete().
+  etag <- .viya_req(h, uri) |> httr2::req_perform() |>
+    httr2::resp_header("ETag")
+  out <- .viya_req(h, uri) |>
+    httr2::req_method("PATCH") |>
+    httr2::req_headers(`If-Match` = etag) |>
+    httr2::req_body_json(body) |>
+    httr2::req_perform() |> httr2::resp_body_json()
+  message("updated ", out$path %||% path)
+  invisible(out)
+}
