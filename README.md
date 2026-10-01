@@ -134,8 +134,9 @@ viya_clinical_list()                    # top-level contexts
 viya_clinical_list("/Acme/Study 1")     # everything inside a study
 viya_clinical_types()                   # what the type_id column means
 
-viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.zip")
-utils::unzip("protocol.zip", exdir = "protocol")
+viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.sas")
+viya_clinical_download("/Acme/Study 1", "study1.zip")  # a container
+utils::unzip("study1.zip", exdir = "study1")
 ```
 
 `viya_clinical_list()` returns `name`, `id`, `type` (`CONTEXT`, `FOLDER`
@@ -143,11 +144,11 @@ or `FILE`), `type_id`, `path`, `size`, `state` and `modified`, and it
 pages through the whole container rather than stopping at the first
 page.
 
-Two things to know about downloads. The content endpoint always answers
-with a **ZIP archive**, whichever kind of item you ask for — a single
-file comes back zipped, and a context or folder comes back as a zip of
-everything under it. And writing to the repository (creating contexts,
-uploading files) is out of scope here: this release is read-only.
+A file downloads as itself. A context or folder downloads as a **ZIP
+archive** of everything under it. The service sends no file name either
+way, so give `local_path` the full destination name. Writing to the
+repository (creating contexts, uploading files) is out of scope here:
+this release is read-only.
 
 If you already have a compute session, reuse its credentials rather than
 configuring them twice:
