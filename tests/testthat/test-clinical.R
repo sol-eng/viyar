@@ -4,7 +4,8 @@
 # assert which endpoints were hit without also pinning the sequence they
 # were hit in. Every URL is appended to `seen$url`.
 .mock_clinical <- function(seen, item = NULL, pages = NULL, content = NULL,
-                           types = NULL, content_type = "application/zip") {
+                           types = NULL, content_type = "application/zip",
+                           find_pages = NULL) {
   if (is.null(item))
     item <- list(id = "1", path = "/", typeId = "tenant",
                  primaryType = "CONTEXT", state = "ACTIVE", size = 0)
@@ -21,6 +22,14 @@
     if (grepl("/types", u))
       return(httr2::response_json(status = 200,
                                   body = list(items = types, links = list())))
+    if (grepl("/repository/items\\?", u)) {
+      # Same `next`-following pagination as `/children`, but this is the
+      # flat, repository-wide items collection `viya_clinical_find()` hits
+      # -- there's no item id in the URL at all, just the query string.
+      i <- sum(grepl("/repository/items\\?", seen$url))
+      if (i > length(find_pages)) stop("unexpected extra find request: ", u)
+      return(httr2::response_json(status = 200, body = find_pages[[i]]))
+    }
     if (grepl("/children", u)) {
       # `pages` is a list of already-built collection bodies; each is served
       # in turn so a test can hand back a `next` link and check it is followed.
@@ -192,6 +201,60 @@ test_that("viya_clinical_list() tolerates an item with no name", {
 
   expect_true(is.na(df$name))
   expect_equal(df$id, "9")
+})
+
+# ---- viya_clinical_find() ----------------------------------------------
+
+test_that("viya_clinical_find() hits the repository-wide items endpoint with the filter", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(
+    seen,
+    find_pages = list(.clin_page(list(
+      .clin_item("Curanex-XR", "7", "CONTEXT", "organization",
+                 "/Curanex-XR"))))))
+
+  df <- viya_clinical_find("contains(name,'Curanex')", token = "t", url = .clin_url)
+
+  expect_equal(df$name, "Curanex-XR")
+  expect_equal(df$path, "/Curanex-XR")
+  expect_true(any(grepl(
+    "/clinicalRepository/repository/items?limit=100&filter=contains%28name%2C%27Curanex%27%29",
+    seen$url, fixed = TRUE)))
+})
+
+test_that("viya_clinical_find() follows the collection's `next` link to the end", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(
+    seen,
+    find_pages = list(
+      .clin_page(list(.clin_item("a", "2")),
+                 next_href = "/clinicalRepository/repository/items?start=1&limit=1"),
+      .clin_page(list(.clin_item("b", "3"))))))
+
+  df <- viya_clinical_find("contains(name,'a')", token = "t", url = .clin_url)
+
+  expect_equal(df$name, c("a", "b"))
+})
+
+test_that("viya_clinical_find() returns a typed zero-row frame when nothing matches", {
+  seen <- new.env()
+  httr2::local_mocked_responses(.mock_clinical(seen, find_pages = list(.clin_page(list()))))
+
+  df <- viya_clinical_find("eq(name,'nope')", token = "t", url = .clin_url)
+
+  expect_equal(nrow(df), 0)
+  expect_equal(names(df),
+               c("name", "id", "type", "type_id", "path", "size", "state",
+                 "modified"))
+})
+
+test_that("viya_clinical_find() rejects an empty filter", {
+  expect_error(viya_clinical_find("", token = "t", url = .clin_url))
+})
+
+test_that("viya_clinical_find() rejects a missing URL with the standard hint", {
+  expect_error(viya_clinical_find("eq(name,'x')", token = "t", url = ""),
+               "No Viya URL configured")
 })
 
 # ---- viya_clinical_download() ----------------------------------------

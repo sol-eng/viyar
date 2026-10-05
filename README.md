@@ -134,6 +134,9 @@ viya_clinical_list()                    # top-level contexts
 viya_clinical_list("/Acme/Study 1")     # everything inside a study
 viya_clinical_types()                   # what the type_id column means
 
+viya_clinical_find("contains(name,'Acme')")   # search the whole tree by name
+viya_clinical_find("eq(name,'protocol.sas')")
+
 viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.sas")
 viya_clinical_download("/Acme/Study 1", "study1.zip")  # a container
 utils::unzip("study1.zip", exdir = "study1")
@@ -142,7 +145,11 @@ utils::unzip("study1.zip", exdir = "study1")
 `viya_clinical_list()` returns `name`, `id`, `type` (`CONTEXT`, `FOLDER`
 or `FILE`), `type_id`, `path`, `size`, `state` and `modified`, and it
 pages through the whole container rather than stopping at the first
-page.
+page. `viya_clinical_find()` returns the same shape, but searches across
+the whole repository by an RQL filter expression (`eq`, `ne`, `contains`,
+`startsWith`, ... combinable with `and`/`or`/`not`) instead of listing one
+known container's children — useful when you don't know, or can't get
+right, the exact path to something.
 
 A file downloads as itself. A context or folder downloads as a **ZIP
 archive** of everything under it. The service sends no file name either

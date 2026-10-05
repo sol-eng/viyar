@@ -132,6 +132,44 @@ viya_clinical_list <- function(path = "/", token = viya_token(),
   .viya_clinical_items_df(items)
 }
 
+#' Search the Clinical Repository by filter
+#'
+#' Finds items anywhere in the repository matching an RQL filter
+#' expression -- the only Clinical Repository endpoint that queries across
+#' the whole tree, rather than one known container's direct children
+#' (contrast [viya_clinical_list()], which only ever lists one container's
+#' own children, found by resolving a path you already know). Useful when
+#' you don't know -- or can't get right -- the exact path to a context,
+#' folder or file, e.g. after a [viya_clinical_list()]/[viya_clinical_item()]
+#' call 404s.
+#'
+#' @param filter An RQL filter expression over the underlying
+#'   `GET /repository/items` endpoint, e.g. `"contains(name,'adsl')"` or
+#'   `"eq(name,'Curanex-XR')"`. Supports the usual relational (`eq`, `ne`,
+#'   `lt`, `le`, `gt`, `ge`) and string (`contains`, `startsWith`) functions,
+#'   combinable with `and`/`or`/`not`. The API does not support filtering on
+#'   `children`, `contentType` or `digest`.
+#' @param token Viya access token; defaults to [viya_token()].
+#' @param url Viya base URL; defaults to the configured URL.
+#' @return A data frame in the same shape as [viya_clinical_list()]'s
+#'   return value (`name`, `id`, `type`, `type_id`, `path`, `size`, `state`,
+#'   `modified`). Zero rows if nothing matches.
+#' @examples
+#' \dontrun{
+#' viya_clinical_find("contains(name,'Curanex')")
+#' viya_clinical_find("eq(name,'adsl.sas7bdat')")
+#' }
+#' @export
+viya_clinical_find <- function(filter, token = viya_token(),
+                               url = viya_config()$url) {
+  h <- .viya_clinical_h(token, url)
+  stopifnot(nzchar(filter))
+  items <- .viya_clinical_collect(
+    h, paste0("/clinicalRepository/repository/items?limit=100&filter=",
+              utils::URLencode(filter, reserved = TRUE)))
+  .viya_clinical_items_df(items)
+}
+
 #' Download Clinical Repository content
 #'
 #' Downloads an item's content to a local file. What you get depends on
