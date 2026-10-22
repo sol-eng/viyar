@@ -120,6 +120,75 @@ viya_fs_list(h, "/nfs/homes/user/reports/2026")
 viya_fs_delete(h, "/nfs/homes/user/reports/2026")
 ```
 
+## SAS Clinical Acceleration Repository
+
+A third, separate storage system, available only on clusters licensed for
+SAS Clinical Acceleration. It is a governed hierarchy — contexts
+(organizations, studies, deliveries, ...) hold folders, which hold files
+— and `viyar` reads it without a compute session, so these functions take
+`token`/`url` rather than a handle `h`:
+
+```r
+viya_clinical_item()                    # the repository root
+viya_clinical_list()                    # top-level contexts
+viya_clinical_list("/Acme/Study 1")     # everything inside a study
+viya_clinical_types()                   # what the type_id column means
+
+viya_clinical_find("contains(name,'Acme')")   # search the whole tree by name
+viya_clinical_find("eq(name,'protocol.sas')")
+
+viya_clinical_download("/Acme/Study 1/protocol.sas", "protocol.sas")
+viya_clinical_download("/Acme/Study 1", "study1.zip")  # a container
+utils::unzip("study1.zip", exdir = "study1")
+```
+
+`viya_clinical_list()` returns `name`, `id`, `type` (`CONTEXT`, `FOLDER`
+or `FILE`), `type_id`, `path`, `size`, `state` and `modified`, and it
+pages through the whole container rather than stopping at the first
+page. `viya_clinical_find()` returns the same shape, but searches across
+the whole repository by an RQL filter expression (`eq`, `ne`, `contains`,
+`startsWith`, ... combinable with `and`/`or`/`not`) instead of listing one
+known container's children — useful when you don't know, or can't get
+right, the exact path to something.
+
+A file downloads as itself. A context or folder downloads as a **ZIP
+archive** of everything under it. The service sends no file name either
+way, so give `local_path` the full destination name. Writing is covered
+below.
+
+### Changing repository content
+
+Add new files with `viya_clinical_upload()`. To change an existing file,
+check it out, edit your local copy, and check it back in:
+
+```r
+viya_clinical_create("/Acme/Study 1/programs")          # a folder
+viya_clinical_upload("adsl.sas", "/Acme/Study 1/programs")
+
+f <- "/Acme/Study 1/programs/adsl.sas"
+viya_clinical_checkout(f, "adsl.sas", overwrite = TRUE)
+# ...edit adsl.sas...
+viya_clinical_checkin(f, "adsl.sas", comment = "Derive TRTSDT from EX")
+# or, to give up instead of checking in: viya_clinical_undo_checkout(f)
+
+viya_clinical_update(f, name = "adsl_v1.sas")           # rename
+viya_clinical_delete("/Acme/Study 1/programs/adsl_v1.sas")  # to the recycle bin
+```
+
+What you can do depends on your repository permissions. Creating a
+top-level organization needs Clinical Administrators membership, and
+deleting a context needs `permanent = TRUE` plus the "Permanently Delete
+Items" privilege. A deployment can also refuse some file extensions; the
+error message names the extension.
+
+If you already have a compute session, reuse its credentials rather than
+configuring them twice:
+
+```r
+h <- viya_session()
+viya_clinical_list("/", token = h$token, url = h$base)
+```
+
 ## Authenticating to SAS Viya
 
 - Workbench: managed OAuth credentials via rstudioapi (integration name

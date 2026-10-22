@@ -141,6 +141,128 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   instead of erroring). Neither this API nor the Folders API supports
   recursive/nested creation -- `viya_create_folder()`/`viya_fs_mkdir()`
   both walk the path themselves, creating one missing segment at a time.
+- `R/clinical.R` — `viya_clinical_item()`/`viya_clinical_list()`/
+  `viya_clinical_download()`/`viya_clinical_types()`: a *third* storage
+  system, the SAS Clinical Acceleration Repository (separately licensed;
+  absent on clusters without it, hence `skip_if_no_clinical()` in
+  `helper-live.R` probing the service root rather than assuming). Read-only;
+  writes live in `R/clinical-write.R` (next entry). Notes, with **live**
+  meaning confirmed against a live CA-enabled cluster and
+  **inferred** meaning taken from developer.sas.com only:
+  - **live** The routed prefix is `/clinicalRepository`, but the service's
+    own API root needs the **trailing slash**: `/clinicalRepository`
+    answers `302`, `/clinicalRepository/` answers `200` with
+    `application/vnd.sas.api+json` and the link catalogue. The web app at
+    `/SASClinicalRepository/` is an unrelated HTML SPA.
+  - **live** `/clinicalRepository/repositories` does not exist (a
+    plausible-sounding guess that 404s). The item collection is
+    `/clinicalRepository/repository/items`; the root item is reached by
+    path, not by a magic id -- `GET /repository/paths?path=/` returns
+    `id "1"`, `typeId "tenant"`, `primaryType "CONTEXT"`. There is no
+    `/repository/items/root`.
+  - **live** Every item carries `primaryType` (the `ItemType` enum:
+    `CONTEXT`/`FOLDER`/`FILE`) *and* a separate `typeId` from the
+    `/clinicalRepository/types` catalogue (`organization`, `study`,
+    `folder`, `sasprogram`, `rprogram`, `sasdataset`, ...). The two are
+    not interchangeable: `POST .../children?type=study` fails with
+    `not a valid "ItemType"`. `viya_clinical_types()` exposes the
+    catalogue so `type_id` is interpretable.
+  - **live** Download is `POST /repository/items/{id}/content`, not
+    `GET` -- `GET` answers `405` naming `POST`/`PUT`. A **file** comes
+    back raw, with its own media type (`application/x-sas` for a `.sas`
+    program); a **container** comes back as `application/zip` (the empty
+    root gives a 22-byte end-of-central-directory zip). Neither sends a
+    `Content-Disposition`, so there is no filename to recover. An earlier
+    version of this note said *every* download was a zip -- that was
+    inferred from the empty root alone and disproved once a real file
+    existed (2026-10-01). `viya_clinical_download()` keys its "(zip
+    archive)" message off the response's content type.
+  - **live** Containers carry `size = -1` ("no size"); files carry their
+    byte count. `viya_clinical_list()` maps negative sizes to `NA`.
+  - **live** Collections emit real `next`/`prev`/`first`/`last`
+    hypermedia links whenever a further page exists, and each `href` is
+    already a service-absolute path usable straight from `.viya_req()`
+    (verified on `/clinicalRepository/users`, and on
+    `/repository/items/{id}/children` with two children at `limit=1`).
+    `.viya_clinical_collect()` therefore follows `next` to the end --
+    the one list path in this package that does not truncate. On
+    `children`, `count` is the collection total (2 on a one-item page),
+    and the `next` href carries a server-added `sortBy=` parameter.
+    `/clinicalRepository/types` is the exception: it ignores `start`
+    and `limit` entirely and returns all 50 types in one page.
+  - **live** Writes (all confirmed 2026-10-01 with a Clinical
+    Administrators account on `caf`; wrapped in `R/clinical-write.R`):
+    - Creating a top-level context (`organization` under the root, id
+      `"1"`) needs the `X-SAS-Clinical-Authorization: ADMIN` header *and*
+      Clinical Administrators membership. Inside a context you created,
+      the header is **not** needed -- sending it there 403s "Access is
+      denied" -- your own permissions apply.
+    - `POST .../children` (the catalogue's `createContainer`) takes
+      `type` (`CONTEXT`/`FOLDER`), `typeId` and `name` as **query**
+      parameters; a JSON body is ignored ("Required request parameter
+      `name` is missing"). It creates containers only -- `type=FILE` is
+      rejected.
+    - Files go in through `PUT /repository/items/{containerId}/content`
+      (multipart, one `file` part). The stored name is the **file
+      part's own filename**; a separate `filename` form field is
+      ignored. There is also a workspace route -- create folders with
+      `POST /workspaces/@currentUser/folders?path=&name=`, upload with
+      `PUT /workspaces/@currentUser/items?path=`, then
+      `POST /workspaces/@currentUser/files?path=&action=CHECK_IN&comment=`
+      (also `CHECK_OUT`, `UNDO_CHECKOUT`, `COPY_VERSION`, ...). Workspace
+      paths mirror repository paths.
+    - **`.R` and `.r` uploads are rejected** on `caf` ("Files with
+      extension "R" cannot be uploaded"), although an `rprogram` type
+      exists -- likely a deployment setting, unconfirmed.
+    - Privileges the test account lacks: "Enable/Manage Versioning"
+      (so `CHECK_IN` with `fileVersion=MAJOR` 403s; an unversioned
+      check-in works) and "Permanently Delete Items".
+    - `DELETE /repository/items/{id}` moves a file or folder to the
+      recycle bin. Contexts can only be deleted with `?permanent=true`
+      ("Context types cannot be logically deleted"), which needs the
+      privilege above, and the admin header doesn't help ("You cannot
+      perform this action as an administrator"). So a test run cannot
+      clean up an organization it creates.
+    - Live fixture on `caf`: `/viyar_live_test_1790887509` (folders
+      `data`, holding `hello.sas` and `direct.sas`, and `programs`),
+      plus an empty `/viyar_live_test_tmp_*` organization -- both left
+      over because of the delete limit above.
+  - **inferred** (developer.sas.com only, never exercised):
+    `GET /repository/items/{fileId}/versions[/{v}/content]`,
+    `GET|POST /repository/files/content` (bulk zip by filter/search),
+    and the `filter=` RQL parameter on `children` (accepted live without
+    error, but against an empty collection, so its semantics are
+    unconfirmed). None of these are wrapped. The `caf` fixture above is
+    populated now, but its files are unversioned (the test account lacks
+    the versioning privilege), so the versions endpoints still have
+    nothing to return there.
+- `R/clinical-write.R` — `viya_clinical_create()`/`_upload()`/
+  `_checkout()`/`_checkin()`/`_undo_checkout()`/`_update()`/`_delete()`:
+  writes to the Clinical Repository, built on the request shapes listed
+  under `R/clinical.R` above. Check-out and check-in go through the
+  server's per-user workspace, which the API never exposes:
+  `viya_clinical_checkin()` uploads the local copy to the workspace path
+  that mirrors the repository path, then sends `CHECK_IN`. It checks
+  `checkedOut` first, so it never touches the workspace for a file that
+  isn't checked out. `viya_clinical_update()` reads the item's `ETag` and
+  sends it as `If-Match` (a `PATCH` without it gets `428`); the body is
+  flat (`{"name": ...}`). Found live: `CHECK_OUT` of a file you already
+  hold gets `409`, and `CHECK_IN`/`UNDO_CHECKOUT` of a file that isn't
+  checked out gets `400`; a folder holding a checked-out file can't be
+  deleted (`400 The file is checked out`). `.viya_req()` retries
+  429/503, so a write the server completed before a 503 can be retried
+  and answered with 409 (e.g. a second CHECK_OUT, "already checked out by
+  you"); if a write 409s after a transient 503, check the item's state
+  before retrying by hand.
+  **Lock/unlock is not implemented, deliberately:** items carry a
+  `locked` field and there is a "Manage Locking" privilege, but
+  `PATCH {"locked": true}` answers `400 Property "locked" is not a valid
+  property`, `.../lock`, `.../locked` and `.../state?value=locked` all
+  `404`, and the OpenAPI spec defines no lock action. Version history
+  (`/versions`) is being built on a separate branch. Live tests
+  (`test-live-clinical-write.R`) work inside one long-lived organization,
+  `/viyar_live_tests`, one folder per test, because the test account
+  can't delete an organization.
 - `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
   `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
   always fetches the log internally for diagnosis, defaults `output` to
@@ -186,10 +308,20 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
 ## The `viyar` S3 handle
 
 Every function except `viya_login()`/`viya_config()`/`viya_token()`/
-`viya_contexts()`/`viya_sessions()`/`viya_kill()`/`viya_reachable()` takes
-a `viyar` handle (`h`) as its first argument — the object `viya_session()`
-returns: `list(token, session, context, base)` tagged with class
-`"viyar"`. `print.viyar()` is its only S3 method.
+`viya_contexts()`/`viya_sessions()`/`viya_kill()`/`viya_reachable()`/
+the `viya_clinical_*()` family takes a `viyar` handle (`h`) as its first
+argument — the object `viya_session()` returns:
+`list(token, session, context, base)` tagged with class `"viyar"`.
+`print.viyar()` is its only S3 method.
+
+The `viya_clinical_*()` functions deliberately follow the
+`viya_contexts()`/`viya_sessions()` pattern (`token`/`url` arguments,
+defaulted from `viya_token()`/`viya_config()$url`) instead. The Clinical
+Repository is not a compute API, so requiring `h` would force a pod
+launch — 20s at best, and `viya_session()`'s own errorCode 5830 retry
+loop at worst — purely to read a folder listing. Internally they build
+the minimal `list(token, base)` that `.viya_req()` actually reads; a
+caller who already has a session passes `h$token`/`h$base`.
 
 ## Authentication (three paths into `viya_token()`)
 
@@ -265,6 +397,15 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   3. Then run the same `test_dir()` command — `helper-live.R`'s
      `skip_if_no_viya()` auto-skips these tests when no URL/token is
      configured, so it's safe to run the full suite either way.
+
+  `test-live-clinical.R` needs a cluster with SAS Clinical Acceleration
+  installed. It is separately licensed and absent from most deployments
+  -- including the one the rest of the live tier was validated against
+  -- so these tests were written and validated against a different
+  cluster (2026-08-25, 19 assertions, all passing).
+  `skip_if_no_clinical()` probes `/clinicalRepository/` and skips
+  cleanly where the service is absent, so pointing the suite at either
+  is safe.
 
 ## Known gaps / follow-ups
 
@@ -347,6 +488,9 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
     takes one page at a single hardcoded `limit` and never
     follows the documented `links.next` hypermedia relation — a collection
     larger than that limit is silently truncated with no warning.
+    `R/clinical.R` is the one place this is already fixed:
+    `.viya_clinical_collect()` walks `next` to the end, and is the
+    pattern to copy when closing this gap elsewhere.
   - **Compute job polling**: `viya_submit()` busy-polls
     `/jobs/{id}/state` with `Sys.sleep()`; the Compute service documents a
     `wait=`/`If-None-Match` long-poll pattern (304 on no change) intended
@@ -380,3 +524,23 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   `ETag` format on a real cluster are all unverified beyond the mocked
   tests; `test-live-fs.R`/`test-live-files.R` are written and ready for
   whoever runs the live tier next.
+- **Clinical Repository, populated case.** The `caf` repository is empty
+  and the test account is not a Clinical Administrator, so nothing could
+  be seeded (see `R/clinical.R`'s notes above). Three things stay
+  unverified until someone runs this against a repository with real
+  content: what `viya_clinical_list()` returns for a populated container
+  (column values, not just column names), whether
+  `viya_clinical_download()` on a single *file* returns that file zipped
+  or raw, and whether `next`-link paging behaves the same on
+  `/repository/items/{id}/children` as it does on
+  `/clinicalRepository/users` (where it was verified). Ask the cluster
+  owner for Clinical Administrators membership before attempting this,
+  rather than working around the `403`.
+- **Clinical Repository writes are deliberately absent.** The API does
+  document `POST .../children` (create container), `PUT .../content`
+  (upload), `PATCH .../items/{id}` and `DELETE .../items/{id}`, and the
+  service model includes a `trashcan` type — a delete is a governed,
+  audited operation in a regulated system, not a `rm`. That is a
+  deliberate scope decision, not an oversight: adding writes needs an
+  admin-capable account, a populated repository to test against, and a
+  view on the audit trail those calls generate.

@@ -15,6 +15,24 @@
     nzchar(Sys.getenv("RS_SERVER_ADDRESS"))
 }
 
+.viya_no_token_error <- function() {
+  msg <- paste0("No Viya token available. Set VIYA_TOKEN, run inside Posit ",
+                "Workbench with a matching OAuth integration, or call ",
+                "viya_login() to authenticate interactively.")
+  if (.viya_in_workbench_session() &&
+      !requireNamespace("rstudioapi", quietly = TRUE)) {
+    msg <- paste0(msg, " Note: this looks like a Posit Workbench session, but ",
+                  "the 'rstudioapi' package isn't installed, so the managed-",
+                  "OAuth path was skipped silently -- it's a Suggests, not a ",
+                  "hard dependency of viyar. Install it with ",
+                  "install.packages(\"rstudioapi\"), or, when (re)installing ",
+                  "viyar itself via remotes, pass dependencies = TRUE (unlike ",
+                  "base install.packages(), remotes' own NA default pulls in ",
+                  "Depends/Imports/LinkingTo only, not Suggests).")
+  }
+  msg
+}
+
 .viya_no_url_error <- function() {
   msg <- "No Viya URL configured. viya_config(url = ...) or set VIYA_URL."
   if (!.viya_in_workbench_session()) {
@@ -155,7 +173,5 @@ viya_token <- function(refresh = FALSE) {
     if (!is.null(resp)) return(.viya_cache_token(resp, .token_cache$client_id, refresh_url))
   }
 
-  stop("No Viya token available. Set VIYA_TOKEN, run inside Posit Workbench ",
-       "with a matching OAuth integration, or call viya_login() to ",
-       "authenticate interactively.")
+  stop(.viya_no_token_error())
 }

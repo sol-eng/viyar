@@ -1,0 +1,220 @@
+---
+title: "CA Workflow"
+subtitle: "The SAS Clinical Acceleration demo flow, reproduced in Positron/Workbench with viyar"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+editor: visual
+---
+
+## What this notebook does
+
+This walks the same end-to-end flow SAS's Clinical Acceleration (CA) product team demoed live -- repository browse, check-out, edit, run, check-in, versioning -- but from Positron/Workbench over `viyar`'s REST calls instead of SAS Studio or the CA VS Code extension. It runs against a real repository: a `Curanex` study context holding CDISC Pilot ADaM and SDTM data.
+
+Each section below names the demo step it reproduces. Two things the demo showed are **not** covered here, called out where they come up instead of glossed over:
+
+- **Managed Clinical Jobs** -- job definitions, `PROC SCAPROC`'s automatic dependency detection ("Run and Populate"), per-input version pinning, and the run manifest (JSON: who/what/when/inputs/outputs/log/listing links) that ties a specific run to exact program and data versions. This is a distinct CA subsystem with its own REST surface; `viyar` doesn't wrap any of it today.
+- **Version diff/compare and the repository audit log** -- `viyar` surfaces an item's current `version` number and checked-out state, but the version-list/diff/content-by-version endpoints are documented-only (never confirmed live) and the audit log isn't wrapped at all.
+- **Permissions, roles, and context privileges** -- the contexts/groups/roles Kim showed in Manage Data Repository are an admin concern, set through the repository's own UI, not something any `viyar` function touches.
+
+## 1. Setup
+
+Running inside Workbench, auth is automatic as long as a Viya OAuth integration is configured -- no `viya_login()` needed. Adjust `wb_integration`/`url` below if your Workbench integration is named differently.
+
+```{r}
+#| label: setup
+#| eval: true
+
+library(viyar)
+
+viya_config(wb_integration = "sas-viya-caf", url = "https://caf.pcluster.soleng.posit.it")
+```
+
+## 2. Manage Data Repository: find the study and see what's in it
+
+Kim's demo opened a context (XMB111) from the waffle-icon repository app -- "Google Drive on steroids": contexts hold folders, which hold content, all the way down, with permissions settable at every level. We don't know the exact path to the `Curanex` study up front (the obvious guess 404'd last time), so we search for it instead of assuming it:
+
+```{r}
+#| label: find-study
+#| eval: true
+
+hits <- viya_clinical_find("contains(name,'Curanex')")
+hits
+
+study_path <- hits$path[1]
+study_path
+```
+
+```{r}
+#| label: browse-study
+#| eval: true
+
+viya_clinical_item(study_path)   # context metadata: state, owner, size, ...
+viya_clinical_list(study_path)   # its direct contents -- data/programs folders
+```
+
+```{r}
+#| label: browse-domains
+#| eval: true
+
+# Same lesson as finding the study itself -- search for the adam/sdtm
+# folders under it rather than assuming how deep they're nested.
+find_under <- function(parent_path, name) {
+  hit <- viya_clinical_find(
+    paste0("and(contains(path,'", parent_path, "'),eq(name,'", name, "'))"))
+  if (!nrow(hit)) stop("no '", name, "' folder found under ", parent_path)
+  hit$path[1]
+}
+
+adam_path <- find_under(study_path, "adam")
+sdtm_path <- find_under(study_path, "sdtm")
+
+adam_items <- viya_clinical_list(adam_path)
+sdtm_items <- viya_clinical_list(sdtm_path)
+
+adam_items
+sdtm_items
+```
+
+(These files live behind the repository's NFS mount and an Oracle metadata store, per Kim's walkthrough -- that layering is exactly what's abstracted behind this one REST call.)
+
+## 3. Check out a program ("SAS Studio" check-out)
+
+In the demo, checking out `D0DM` locked it to Kim and gave her the choice of pulling the latest content (`local_path` set) or working from whatever copy she already had (`local_path = NULL` -- the "check out without copy" option James asked about). `viya_clinical_checkout()` maps directly onto that choice:
+
+```{r}
+#| label: find-program
+#| eval: true
+
+# Any .sas program filed under this study -- the CDISC pilot data usually
+# ships with a couple of programs alongside the datasets.
+programs <- viya_clinical_find(
+  paste0("and(contains(path,'", study_path, "'),contains(name,'.sas'))"))
+programs
+
+if (!nrow(programs))
+  stop("no .sas program found under ", study_path, " -- set program_path by hand below")
+```
+
+```{r}
+#| label: checkout
+#| eval: true
+
+# Edit this if you want a specific program instead of whatever matched first.
+program_path  <- programs$path[1]
+program_local <- file.path("downloads", basename(program_path))
+dir.create("downloads", showWarnings = FALSE)
+
+viya_clinical_checkout(program_path, program_local, overwrite = TRUE)
+```
+
+## 4. Make a change
+
+Kim's example was editing an age criterion in `D0DM` and saving it back to the workspace before checking it back in. Same idea here -- a small, documented edit to the local copy:
+
+```{r}
+#| label: edit
+#| eval: true
+
+writeLines(c(readLines(program_local),
+             "/* viyar CA Workflow demo: added by Positron, see check-in comment */"),
+           program_local)
+```
+
+## 5. Run it against the data (the thing SAS Studio actually gave Kim)
+
+Checking a program out doesn't run it -- it still needs a compute session and the data where SAS can read it, same as the demo's workspace-on-disk model. Pull the domain data down, push it onto the session's filesystem, and `libname` it:
+
+```{r}
+#| label: session
+#| eval: true
+
+h <- viya_session()
+h
+```
+
+```{r}
+#| label: download-domains
+#| eval: true
+
+dir.create("downloads/adam", recursive = TRUE, showWarnings = FALSE)
+dir.create("downloads/sdtm", recursive = TRUE, showWarnings = FALSE)
+
+download_domain <- function(items, repo_path, local_dir) {
+  files <- items[items$type == "FILE", ]
+  for (name in files$name) {
+    viya_clinical_download(paste0(repo_path, "/", name), file.path(local_dir, name))
+  }
+  files$name
+}
+
+adam_files <- download_domain(adam_items, adam_path, "downloads/adam")
+sdtm_files <- download_domain(sdtm_items, sdtm_path, "downloads/sdtm")
+```
+
+```{r}
+#| label: fs-upload
+#| eval: true
+
+# /tmp is confirmed writable and the same filesystem view for both the REST
+# API and SAS code on this cluster -- fine for a scratch location like this.
+viya_fs_mkdir(h, "/tmp/ca_workflow/adam")
+viya_fs_mkdir(h, "/tmp/ca_workflow/sdtm")
+
+for (name in adam_files)
+  viya_fs_upload(h, file.path("downloads/adam", name), paste0("/tmp/ca_workflow/adam/", name))
+for (name in sdtm_files)
+  viya_fs_upload(h, file.path("downloads/sdtm", name), paste0("/tmp/ca_workflow/sdtm/", name))
+```
+
+```{sas}
+*| session: h;
+*| eval: true;
+
+libname adam "/tmp/ca_workflow/adam";
+libname sdtm "/tmp/ca_workflow/sdtm";
+
+proc contents data=adam._all_ nods;
+run;
+
+proc contents data=sdtm._all_ nods;
+run;
+```
+
+Now submit the edited program itself -- this is the closest `viyar` gets to Kim's "living in SAS Studio" step, minus the job-definition/manifest layer noted up top:
+
+```{r}
+#| label: submit-program
+#| eval: true
+
+r <- viya_submit(h, paste(readLines(program_local), collapse = "\n"))
+cat(r$log, sep = "\n")
+```
+
+## 6. Check it back in (the audit trail step)
+
+```{r}
+#| label: checkin
+#| eval: true
+
+before <- viya_clinical_item(program_path)$version
+
+viya_clinical_checkin(program_path, program_local,
+                      comment = "viyar CA Workflow demo: annotated via Positron")
+
+after <- viya_clinical_item(program_path)$version
+c(before = before, after = after)
+```
+
+That version bump is the full extent of what's visible here. Kim's demo also showed a side-by-side diff between versions (`proc compare` driven from the repository's version-history pane) and a repository-wide audit log entry for every check-out/check-in -- `viyar` can confirm the version changed, not show what changed or browse the log; see the gaps called out at the top.
+
+## 7. Cleanup
+
+```{r}
+#| label: cleanup
+#| eval: false
+
+viya_end(h)
+```
