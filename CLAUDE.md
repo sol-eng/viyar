@@ -227,15 +227,11 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
       `data`, holding `hello.sas` and `direct.sas`, and `programs`),
       plus an empty `/viyar_live_test_tmp_*` organization -- both left
       over because of the delete limit above.
-  - **inferred** (developer.sas.com only, never exercised):
-    `GET /repository/items/{fileId}/versions[/{v}/content]`,
-    `GET|POST /repository/files/content` (bulk zip by filter/search),
-    and the `filter=` RQL parameter on `children` (accepted live without
-    error, but against an empty collection, so its semantics are
-    unconfirmed). None of these are wrapped. The `caf` fixture above is
-    populated now, but its files are unversioned (the test account lacks
-    the versioning privilege), so the versions endpoints still have
-    nothing to return there.
+  - **inferred** (developer.sas.com only, never exercised): the `filter=`
+    RQL parameter on `children` (accepted live without error, but against
+    an empty collection, so its semantics are unconfirmed). The versions
+    and bulk-download endpoints are now confirmed live and wrapped in
+    `R/clinical-versions.R` (see that entry).
 - `R/clinical-write.R` — `viya_clinical_create()`/`_upload()`/
   `_checkout()`/`_checkin()`/`_undo_checkout()`/`_update()`/`_delete()`:
   writes to the Clinical Repository, built on the request shapes listed
@@ -259,10 +255,27 @@ Files/Folders) — no Python, no `swat` requirement for Compute. See
   `PATCH {"locked": true}` answers `400 Property "locked" is not a valid
   property`, `.../lock`, `.../locked` and `.../state?value=locked` all
   `404`, and the OpenAPI spec defines no lock action. Version history
-  (`/versions`) is being built on a separate branch. Live tests
+  lives in `R/clinical-versions.R`. Live tests
   (`test-live-clinical-write.R`) work inside one long-lived organization,
   `/viyar_live_tests`, one folder per test, because the test account
   can't delete an organization.
+- `R/clinical-versions.R` — `viya_clinical_versions()`/
+  `_download_version()`/`_download_many()`: read-only version history and
+  bulk download, built on the same helpers as `R/clinical.R`.
+  `GET /repository/items/{id}/versions` lists versions; the integer
+  `version` field does **not** work in the content URL (`404`) -- only the
+  `fileVersion` label (`"1.0"`) does, so `_download_version()` validates
+  the label against the list first and names the valid ones. An
+  unversioned file has one row whose `file_version` is `"-"`.
+  `POST /repository/files/content` takes `{"filter": <RQL>}` or
+  `{"text": ...}` and returns a ZIP that stores files flat by name (same
+  names from different folders collide); the RQL `in()` function is
+  rejected, and a search matching nothing is a `200` with an **empty
+  body**, which `_download_many()` turns into a warning and no file. The
+  test account cannot turn versioning on for a file it uploads, so the
+  live tests (`test-live-clinical-versions.R`) read an already-versioned
+  file via `skip_if_no_versioned_file()` (override with
+  `VIYAR_LIVE_VERSIONED_FILE`).
 - `R/quarto.R` — a knitr chunk engine (`{sas}`) for Quarto documents:
   `viya_submit_quarto()` (submit-and-poll like `viya_submit()`, but
   always fetches the log internally for diagnosis, defaults `output` to
