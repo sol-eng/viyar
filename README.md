@@ -191,6 +191,22 @@ viya_clinical_list("/", token = h$token, url = h$base)
 
 ## Authenticating to SAS Viya
 
+**Workbench is the easiest place to use viyar.** An administrator
+registers the OAuth client once, in the Workbench integration. After
+that, no user has to ask for a client, open a browser, paste a code
+back or set a token. Everywhere else, each user needs a registered
+client of their own (see
+[OAuth client for `viya_login()`](#oauth-client-for-viya_login)). In
+Workbench:
+
+- `viya_session()` works with no setup. viyar finds both the token and
+  the Viya URL from the integration.
+- It works in scripts, not just the console. Background jobs, notebook
+  kernels and `quarto render` inherit the Workbench session, so a
+  rendered document can run SAS with no interactive login.
+- Credentials come from Workbench each time they are needed, so there is
+  no token to copy, store or refresh by hand.
+
 - Workbench: managed OAuth credentials via rstudioapi (integration name
   configurable, default `^sas-viya$`). The Viya URL is auto-detected from
   the integration if `viya_config(url = ...)`/`VIYA_URL` isn't set.
@@ -206,6 +222,59 @@ viya_clinical_list("/", token = h$token, url = h$base)
 - Posit Connect: obtain a viewer token with connectapi and pass it:
   `viya_session(token = viewer_token)`.
 - Anywhere: set `VIYA_TOKEN`.
+
+## Requirements
+
+- **R** 4.1.0 or later. No Python, `reticulate` or `swat` needed.
+- **R packages** installed with viyar: `httr2` (1.0.0 or later), `curl`,
+  `jsonlite` and `openssl`.
+- **A SAS Viya 4 deployment** that you can reach over HTTPS, and an
+  account on it. viyar uses REST only: the Compute, CAS Management and
+  Files/Folders services.
+- **A way to get a token**, one of:
+  - Posit Workbench with a SAS Viya managed OAuth integration (needs
+    `rstudioapi`).
+  - `viya_login()` for browser SSO outside Workbench. This needs an
+    **OAuth client that a Viya administrator has registered** on SAS
+    Logon; see [OAuth client for `viya_login()`](#oauth-client-for-viya_login).
+  - A token you already have, in the `VIYA_TOKEN` environment variable.
+    Posit Connect uses this route with a viewer token (needs
+    `connectapi`).
+- **Optional:**
+  - `knitr`, to use the `{sas}` chunk engine in Quarto documents.
+  - SAS Clinical Acceleration on the cluster, for the `viya_clinical_*()`
+    functions. It is separately licensed. Creating a top-level
+    organization needs Clinical Administrators membership.
+  - `testthat`, `pkgload` and `withr`, to run the tests. The live tests
+    also need a cluster and a token; see `CLAUDE.md`.
+
+### OAuth client for `viya_login()`
+
+SAS Logon rejects authorization requests from clients it does not know,
+with the unhelpful message "The request is invalid". The default
+`client_id = "vscode-positron"` exists only where an administrator
+registered it, so on most servers you must ask your Viya administrator
+for a client with these settings:
+
+| Setting | Value |
+|---|---|
+| Client type | Public: no client secret (viyar sends none; it uses PKCE) |
+| Grant types | `authorization_code` and `refresh_token` |
+| Scope | `openid` |
+| Redirect URI | `urn:ietf:wg:oauth:2.0:oob` (the default), or any URI you pass as `redirect_uri` |
+
+Then pass the client id to `viya_login()`:
+
+```r
+viya_login(url = "https://viya.example.com", client_id = "my-client")
+# If the client has a single registered redirect URI, let the server use it:
+viya_login(url = "https://viya.example.com", client_id = "my-client",
+           redirect_uri = NULL)
+```
+
+Without `refresh_token`, you have to log in again whenever the token
+expires. Skip all of this if you use Workbench managed OAuth or set
+`VIYA_TOKEN`.
 
 ## Installation
 
