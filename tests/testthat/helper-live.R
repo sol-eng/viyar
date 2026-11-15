@@ -51,3 +51,20 @@ local_clinical_folder <- function(env = parent.frame()) {
     envir = env)
   path
 }
+
+# Folder in SAS Content (Files service) that the live tests write into.
+# Defaults to /Public; set VIYAR_TEST_FOLDER (or the viyar.test_folder
+# option) to a folder your account can write to, e.g. "/Users/me/My Folder".
+viya_test_folder <- function() {
+  f <- getOption("viyar.test_folder", Sys.getenv("VIYAR_TEST_FOLDER", ""))
+  sub("/+$", "", if (nzchar(f)) f else "/Public")
+}
+
+# Run a live-test setup write; skip the test, rather than error, when the
+# account is not allowed to write to the test folder (HTTP 403).
+skip_if_forbidden <- function(expr) {
+  tryCatch(expr, httr2_http_403 = function(e)
+    testthat::skip(paste0(
+      "HTTP 403: this account cannot write to ", viya_test_folder(),
+      "; set VIYAR_TEST_FOLDER to a folder it can write to")))
+}

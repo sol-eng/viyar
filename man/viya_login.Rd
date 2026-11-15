@@ -16,7 +16,10 @@ viya_login(
 [viya_config()]).}
 
 \item{client_id}{OAuth client id registered on the Viya server for
-interactive/CLI logins.}
+interactive/CLI logins. SAS Logon only accepts clients that an
+administrator has registered, so the default (`"vscode-positron"`)
+works only on deployments where that client exists. Pass the id of a
+public client registered on your server.}
 
 \item{redirect_uri}{Redirect URI to send in the authorization request.
 Defaults to the OAuth out-of-band value
@@ -39,6 +42,23 @@ access token. The token (and refresh token, if issued) is cached and
 picked up automatically by [viya_token()] and [viya_session()] for the
 rest of the R session, refreshing itself silently as it nears expiry.
 }
+\section{If SAS Logon answers "The request is invalid"}{
+
+The browser page gives no hint of the cause. It usually means SAS Logon
+rejected the `client_id` (not registered on this server) or the
+`redirect_uri` (not one of the client's registered redirect URIs).
+Ask your Viya administrator for a registered public client, then
+override one or both arguments, for example
+`viya_login(client_id = "my-client", redirect_uri = NULL)`.
+}
+
+\section{Non-interactive sessions}{
+
+`viya_login()` needs you to paste a code back, so it errors in a
+non-interactive session (`Rscript`, `quarto render`). Set the
+`VIYA_TOKEN` environment variable there instead.
+}
+
 \examples{
 \dontrun{
 viya_login(url = "https://viya.example.com")

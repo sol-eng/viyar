@@ -398,6 +398,12 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
      `skip_if_no_viya()` auto-skips these tests when no URL/token is
      configured, so it's safe to run the full suite either way.
 
+  The SAS Content live tests (`test-live-files.R`, `test-live-data.R`,
+  `test-live-fs.R`) write to `/Public` by default. If your account can't
+  write there, set `VIYAR_TEST_FOLDER` (or the `viyar.test_folder`
+  option) to a folder it can; a 403 on the setup write skips the test
+  (`skip_if_forbidden()` in `helper-live.R`) instead of erroring.
+
   `test-live-clinical.R` needs a cluster with SAS Clinical Acceleration
   installed. It is separately licensed and absent from most deployments
   -- including the one the rest of the live tier was validated against
@@ -436,6 +442,10 @@ Two tiers, both testthat 3e, run locally (no CI wiring yet):
   that run, with the retry loop recovering on attempt 2-4 every time.
   This is what `viya_session()`'s `tries`/`wait` retry exists for; a
   single 500 is not a defect. A run with `tries = 1` will fail often.
+- `viya_login()` errors up front in a non-interactive session (it needs
+  a pasted code); use `VIYA_TOKEN` there. SAS Logon answers "The request
+  is invalid" for an unregistered `client_id` or `redirect_uri`, with no
+  hint of which; the README and help page say to override both.
 - `viya_login()`'s `redirect_uri` defaults to the OAuth out-of-band value
   (`urn:ietf:wg:oauth:2.0:oob`), which is SAS's own documented pattern for
   CLI-style paste-back logins — confirmed against developer.sas.com, not

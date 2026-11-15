@@ -3,8 +3,8 @@ test_that("viya_create_folder creates nested SAS Content folders, idempotently",
   h <- viya_session()
   on.exit(viya_end(h), add = TRUE)
 
-  path <- paste0("/Public/viyar_live_test_", as.integer(Sys.time()))
-  fld <- viya_create_folder(h, paste0(path, "/nested/deep"))
+  path <- paste0(viya_test_folder(), "/viyar_live_test_", as.integer(Sys.time()))
+  fld <- skip_if_forbidden(viya_create_folder(h, paste0(path, "/nested/deep")))
   on.exit(tryCatch(viya_delete_folder(h, path), error = function(e) NULL),
           add = TRUE)
   expect_equal(fld$name, "deep")

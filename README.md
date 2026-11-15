@@ -196,7 +196,13 @@ viya_clinical_list("/", token = h$token, url = h$base)
   the integration if `viya_config(url = ...)`/`VIYA_URL` isn't set.
 - Local desktop R (outside Workbench): `viya_login()` opens a browser SSO
   login (authorization code + PKCE) and caches the resulting token,
-  refreshing it automatically as it nears expiry.
+  refreshing it automatically as it nears expiry. SAS Logon only accepts
+  OAuth clients an administrator has registered, and the default
+  `client_id = "vscode-positron"` and out-of-band `redirect_uri` are
+  rejected on some servers (the browser shows "The request is invalid").
+  Ask your administrator for a registered public client and override
+  them: `viya_login(client_id = "my-client", redirect_uri = NULL)`.
+  It needs an interactive session; use `VIYA_TOKEN` in scripts.
 - Posit Connect: obtain a viewer token with connectapi and pass it:
   `viya_session(token = viewer_token)`.
 - Anywhere: set `VIYA_TOKEN`.

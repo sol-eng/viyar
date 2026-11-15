@@ -99,3 +99,10 @@ test_that(".viya_cache_token populates the token cache from a token response", {
   expect_equal(.token_cache$client_id, "vscode-positron")
   expect_equal(as.numeric(.token_cache$exp), exp_time)
 })
+
+test_that("viya_login() errors clearly in a non-interactive session", {
+  testthat::local_mocked_bindings(interactive = function() FALSE,
+                                  .package = "base")
+  expect_error(viya_login(url = "https://viya.example.com"),
+               "interactive R session.*VIYA_TOKEN")
+})

@@ -67,11 +67,11 @@ test_that("viya_upload then viya_download round-trips a file", {
   fname <- paste0("viyar_live_test_", as.integer(Sys.time()), ".txt")
   tmp_up <- tempfile(fileext = ".txt")
   writeLines("viyar live test", tmp_up)
-  viya_upload(h, tmp_up, "/Public", name = fname)
-  on.exit(tryCatch(viya_delete_file(h, paste0("/Public/", fname)),
+  skip_if_forbidden(viya_upload(h, tmp_up, viya_test_folder(), name = fname))
+  on.exit(tryCatch(viya_delete_file(h, paste0(viya_test_folder(), "/", fname)),
                    error = function(e) NULL), add = TRUE)
 
   tmp_down <- tempfile(fileext = ".txt")
-  viya_download(h, paste0("/Public/", fname), tmp_down)
+  viya_download(h, paste0(viya_test_folder(), "/", fname), tmp_down)
   expect_equal(readLines(tmp_down), "viyar live test")
 })
