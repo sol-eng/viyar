@@ -63,7 +63,10 @@
 #' @param url Viya base URL; defaults to the configured URL (see
 #'   [viya_config()]).
 #' @param client_id OAuth client id registered on the Viya server for
-#'   interactive/CLI logins.
+#'   interactive/CLI logins. SAS Logon only accepts clients that an
+#'   administrator has registered, so the default (`"vscode-positron"`)
+#'   works only on deployments where that client exists. Pass the id of a
+#'   public client registered on your server.
 #' @param redirect_uri Redirect URI to send in the authorization request.
 #'   Defaults to the OAuth out-of-band value
 #'   (`"urn:ietf:wg:oauth:2.0:oob"`), which is SAS's documented redirect
@@ -72,6 +75,17 @@
 #'   entirely and rely on the server's registered default for
 #'   `client_id`, if you know that's what your deployment expects.
 #' @param scope OAuth scopes to request.
+#' @section If SAS Logon answers "The request is invalid":
+#' The browser page gives no hint of the cause. It usually means SAS Logon
+#' rejected the `client_id` (not registered on this server) or the
+#' `redirect_uri` (not one of the client's registered redirect URIs).
+#' Ask your Viya administrator for a registered public client, then
+#' override one or both arguments, for example
+#' `viya_login(client_id = "my-client", redirect_uri = NULL)`.
+#' @section Non-interactive sessions:
+#' `viya_login()` needs you to paste a code back, so it errors in a
+#' non-interactive session (`Rscript`, `quarto render`). Set the
+#' `VIYA_TOKEN` environment variable there instead.
 #' @return The access token (character scalar), invisibly.
 #' @examples
 #' \dontrun{
@@ -84,6 +98,10 @@ viya_login <- function(url = viya_config()$url,
                        redirect_uri = "urn:ietf:wg:oauth:2.0:oob",
                        scope = "openid") {
   if (!nzchar(url)) stop(.viya_no_url_error())
+  if (!interactive())
+    stop("viya_login() needs an interactive R session to paste the ",
+         "authorization code back. In a non-interactive session, set the ",
+         "VIYA_TOKEN environment variable instead.", call. = FALSE)
 
   verifier  <- .pkce_verifier()
   challenge <- .pkce_challenge(verifier)
