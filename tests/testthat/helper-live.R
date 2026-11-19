@@ -68,3 +68,19 @@ skip_if_forbidden <- function(expr) {
       "HTTP 403: this account cannot write to ", viya_test_folder(),
       "; set VIYAR_TEST_FOLDER to a folder it can write to")))
 }
+
+# A file that already has version history, for the read-only version tests.
+# The test account cannot switch versioning on for a file it uploads (found
+# live: uploads stay unversioned whatever check-in sends), so these tests read
+# one that is already versioned instead of making one. Point
+# VIYAR_LIVE_VERSIONED_FILE at your own cluster's equivalent.
+skip_if_no_versioned_file <- function() {
+  skip_if_no_clinical()
+  path <- Sys.getenv("VIYAR_LIVE_VERSIONED_FILE",
+                     "/PositLabs/Curanex-XR/data/adam/adsl.xpt")
+  it <- tryCatch(viya_clinical_item(path), error = function(e) NULL)
+  if (is.null(it) || !isTRUE(it$versioned))
+    testthat::skip(paste0("no versioned file at ", path,
+                          " (set VIYAR_LIVE_VERSIONED_FILE)"))
+  path
+}

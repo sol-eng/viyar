@@ -181,6 +181,26 @@ deleting a context needs `permanent = TRUE` plus the "Permanently Delete
 Items" privilege. A deployment can also refuse some file extensions; the
 error message names the extension.
 
+### Version history and bulk download
+
+A versioned file keeps its earlier content. List the versions, then
+download any one by its `file_version` label:
+
+```r
+viya_clinical_versions("/Acme/Study 1/data/adam/adsl.xpt")
+viya_clinical_download_version("/Acme/Study 1/data/adam/adsl.xpt", "1.0",
+                               "adsl_v1.xpt")
+```
+
+To fetch many files at once, match them with an RQL filter or a text
+search. They arrive as one ZIP, stored by file name only, so two matches
+with the same name from different folders are not told apart:
+
+```r
+viya_clinical_download_many("eq(location,'/Acme/Study 1/data/adam')",
+                            "adam.zip")
+```
+
 If you already have a compute session, reuse its credentials rather than
 configuring them twice:
 
