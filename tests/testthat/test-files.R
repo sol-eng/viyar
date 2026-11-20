@@ -101,22 +101,85 @@ test_that("viya_delete_folder resolves the folder then DELETEs it with recursive
                       base = "https://viya.example.com"), class = "viyar")
 
   resp_folder <- httr2::response_json(status = 200, body = list(id = "reports-id", name = "Reports"))
+  resp_empty <- httr2::response_json(status = 200, body = list(items = list()))
   resp_delete <- httr2::response(status = 204)
 
-  seq <- list(resp_folder, resp_delete)
+  seq <- list(resp_folder, resp_empty, resp_delete)
   i <- 0
   seen <- NULL
   httr2::local_mocked_responses(function(req) {
     i <<- i + 1
-    if (i == 2) seen <<- req
+    if (i == 3) seen <<- req
     seq[[i]]
   })
 
   out <- viya_delete_folder(h, "/Public/Reports")
   expect_null(out)
-  expect_equal(i, 2)
+  expect_equal(i, 3)  # resolve, members (empty), recursive delete
   expect_match(seen$url, "/folders/folders/reports-id\\?recursive=true$")
   expect_equal(seen$method, "DELETE")
+})
+
+test_that("viya_delete_folder deletes nested file members before the recursive DELETE", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  resp_folder <- httr2::response_json(status = 200, body = list(id = "reports-id", name = "Reports"))
+  # one flat listing of the whole tree: a nested folder and a file inside it
+  resp_members <- httr2::response_json(status = 200, body = list(items = list(
+    list(name = "leftover.txt", type = "child", contentType = "file",
+         uri = "/files/files/leftover-id"),
+    list(name = "2026", type = "child", contentType = "folder",
+         uri = "/folders/folders/2026-id"))))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_folder, resp_members, resp_delete, resp_delete)
+  i <- 0
+  seen <- list()
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    seen[[i]] <<- req
+    seq[[i]]
+  })
+
+  expect_null(viya_delete_folder(h, "/Public/Reports"))
+  expect_equal(i, 4)
+
+  # the tree is listed flat, in one call ...
+  expect_match(seen[[2]]$url,
+               "/folders/folders/reports-id/members\\?recursive=true&limit=500$")
+  # ... the file is deleted by its own Files-service uri, the folder is not ...
+  expect_match(seen[[3]]$url, "/files/files/leftover-id$")
+  expect_equal(seen[[3]]$method, "DELETE")
+  # ... and only then does the one recursive folder DELETE go out.
+  expect_match(seen[[4]]$url, "/folders/folders/reports-id\\?recursive=true$")
+  expect_equal(seen[[4]]$method, "DELETE")
+})
+
+test_that("viya_delete_folder leaves reference members alone", {
+  h <- structure(list(token = "t", session = "sess1", context = "ctx",
+                      base = "https://viya.example.com"), class = "viyar")
+
+  # a reference points at a resource someone else owns -- deleting it would
+  # destroy that resource, and it doesn't block the folder delete anyway.
+  resp_folder <- httr2::response_json(status = 200, body = list(id = "reports-id", name = "Reports"))
+  resp_members <- httr2::response_json(status = 200, body = list(items = list(
+    list(name = "shared.csv", type = "reference", contentType = "file",
+         uri = "/files/files/shared-id"))))
+  resp_delete <- httr2::response(status = 204)
+
+  seq <- list(resp_folder, resp_members, resp_delete)
+  i <- 0
+  seen <- list()
+  httr2::local_mocked_responses(function(req) {
+    i <<- i + 1
+    seen[[i]] <<- req
+    seq[[i]]
+  })
+
+  expect_null(viya_delete_folder(h, "/Public/Reports"))
+  expect_equal(i, 3)  # resolve, members, recursive delete -- no file DELETE
+  expect_match(seen[[3]]$url, "/folders/folders/reports-id\\?recursive=true$")
 })
 
 test_that("viya_delete_folder validates its arguments", {

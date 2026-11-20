@@ -15,9 +15,17 @@ viya_delete_folder(h, path)
 `NULL`, invisibly.
 }
 \description{
-Deletes `path` and, if it isn't empty, everything under it
-(`recursive=true` is always sent -- it's a no-op for an empty folder
-and required for a non-empty one).
+Deletes `path` and everything under it.
+}
+\details{
+The Folders service's own `recursive=true` (which it advertises on a
+folder as the `deleteRecursively` link) recurses through *folder*
+members only -- "Any non-folder content is not deleted", in the API's
+own words. A file member, at `/files/files/{id}`, instead fails the
+whole `DELETE` with `409` / `errorCode 11516` "You cannot delete the
+folder because it is not empty", however deep in the tree it sits
+(confirmed live). So the non-folder content is deleted first, then the
+one `recursive=true` `DELETE` takes the folders-only tree that's left.
 }
 \examples{
 \dontrun{
